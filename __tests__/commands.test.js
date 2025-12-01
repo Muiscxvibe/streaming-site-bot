@@ -13,9 +13,13 @@ jest.mock('../src/services/flaresolverr', () => ({
     endpoint: 'http://solver:8191',
   }),
 }));
-jest.mock('../src/services/search', () => ({
-  runSearch: jest.fn(),
-}));
+jest.mock('../src/services/search', () => {
+  const actual = jest.requireActual('../src/services/search');
+  return {
+    ...actual,
+    runSearch: jest.fn(),
+  };
+});
 
 const { openWebsite, ensureActivePage } = require('../src/services/browser');
 const { setWebsite, getWebsite } = require('../src/services/websiteStore');
@@ -23,7 +27,6 @@ const { openWithFlareSolverr } = require('../src/services/flaresolverr');
 const { runSearch } = require('../src/services/search');
 const goToCommand = require('../src/commands/go-to');
 const websiteCommand = require('../src/commands/website');
-const searchCommand = require('../src/commands/search');
 const { MessageFlags } = require('discord.js');
 
 beforeEach(() => {
@@ -37,6 +40,8 @@ describe('go-to command', () => {
     getWebsite.mockReturnValue('https://example.com/');
     const options = {
       getBoolean: jest.fn((name) => (name === 'headless' ? null : false)),
+      getString: jest.fn().mockReturnValue(null),
+      getInteger: jest.fn().mockReturnValue(null),
     };
     const interaction = { deferReply, editReply, options };
 
@@ -53,6 +58,8 @@ describe('go-to command', () => {
     getWebsite.mockReturnValue('https://example.com/');
     const options = {
       getBoolean: jest.fn((name) => (name === 'headless' ? false : false)),
+      getString: jest.fn().mockReturnValue(null),
+      getInteger: jest.fn().mockReturnValue(null),
     };
     const interaction = { deferReply, editReply, options };
 
@@ -69,7 +76,15 @@ describe('go-to command', () => {
     const deferReply = jest.fn();
     const editReply = jest.fn();
     getWebsite.mockReturnValue(null);
-    const interaction = { deferReply, editReply };
+    const interaction = {
+      deferReply,
+      editReply,
+      options: {
+        getBoolean: jest.fn().mockReturnValue(null),
+        getString: jest.fn().mockReturnValue(null),
+        getInteger: jest.fn().mockReturnValue(null),
+      },
+    };
 
     await goToCommand.execute(interaction);
 
@@ -84,6 +99,8 @@ describe('go-to command', () => {
     getWebsite.mockReturnValue('https://example.com/');
     const options = {
       getBoolean: jest.fn((name) => (name === 'use-flaresolverr' ? true : null)),
+      getString: jest.fn().mockReturnValue(null),
+      getInteger: jest.fn().mockReturnValue(null),
     };
     const interaction = { deferReply, editReply, options };
 
@@ -107,6 +124,8 @@ describe('go-to command', () => {
         if (name === 'headless') return false;
         return null;
       }),
+      getString: jest.fn().mockReturnValue(null),
+      getInteger: jest.fn().mockReturnValue(null),
     };
     const interaction = { deferReply, editReply, options };
 
@@ -118,6 +137,64 @@ describe('go-to command', () => {
     expect(editReply.mock.calls.at(-1)[0]).toContain(
       'Opened https://example.com/ via FlareSolverr (http://solver:8191) with headless mode disabled. The window will stay open until you close it.',
     );
+  });
+
+  it('runs a search when search inputs are provided', async () => {
+    const deferReply = jest.fn();
+    const editReply = jest.fn();
+    getWebsite.mockReturnValue('https://example.com/');
+    ensureActivePage.mockResolvedValue({ page: {}, revived: false });
+    runSearch.mockResolvedValue([
+      { name: 'Example s01e01', quality: '1080p', sizeText: '1.4 GB', health: 150 },
+      { name: 'Example s01e01 720p', quality: '720p', sizeText: '900 MB', health: 120 },
+    ]);
+
+    const options = {
+      getBoolean: jest.fn((name) => {
+        if (name === 'use-flaresolverr') return false;
+        if (name === 'headless') return true;
+        return null;
+      }),
+      getString: jest.fn((name) => {
+        if (name === 'type') return 'show';
+        if (name === 'name') return 'Example';
+        return null;
+      }),
+      getInteger: jest.fn((name) => {
+        if (name === 'season') return 1;
+        if (name === 'episode') return 1;
+        return null;
+      }),
+    };
+
+    await goToCommand.execute({ deferReply, editReply, options });
+
+    expect(openWebsite).toHaveBeenCalledWith('https://example.com/', true);
+    expect(runSearch).toHaveBeenCalled();
+    const finalMessage = editReply.mock.calls.at(-1)[0];
+    expect(finalMessage).toContain('Search finished with 2 result(s).');
+    expect(finalMessage).toContain('Top matches ordered by health, quality, then smaller sizes:');
+  });
+
+  it('validates show requirements when searching', async () => {
+    const deferReply = jest.fn();
+    const editReply = jest.fn();
+    getWebsite.mockReturnValue('https://example.com/');
+    ensureActivePage.mockResolvedValue({ page: {}, revived: false });
+
+    const options = {
+      getBoolean: jest.fn().mockReturnValue(null),
+      getString: jest.fn((name) => {
+        if (name === 'type') return 'show';
+        if (name === 'name') return 'Example Show';
+        return null;
+      }),
+      getInteger: jest.fn().mockReturnValue(null),
+    };
+
+    await goToCommand.execute({ deferReply, editReply, options });
+
+    expect(editReply.mock.calls.at(-1)[0]).toContain('Season and episode are required for shows.');
   });
 });
 
@@ -135,65 +212,5 @@ describe('website command', () => {
     expect(editReply.mock.calls.at(-1)[0]).toContain(
       'Saved website: https://discord.com/. Use /go-to to open it on the bot machine.',
     );
-  });
-});
-
-describe('search command', () => {
-  it('requires an active browser session', async () => {
-    const editReply = jest.fn();
-    ensureActivePage.mockResolvedValue({ page: null, revived: false });
-
-    await searchCommand.execute({ deferReply: jest.fn(), editReply });
-
-    expect(editReply.mock.calls.at(-1)[0]).toContain('No active browser session found. Run /go-to first to load the site.');
-  });
-
-  it('validates show inputs for season and episode', async () => {
-    const editReply = jest.fn();
-    ensureActivePage.mockResolvedValue({ page: {}, revived: false });
-    const options = {
-      getString: jest.fn((name) => {
-        if (name === 'type') return 'show';
-        if (name === 'name') return 'Example Show';
-        return null;
-      }),
-      getInteger: jest.fn().mockReturnValue(null),
-    };
-
-    await searchCommand.execute({ deferReply: jest.fn(), editReply, options });
-
-    expect(editReply.mock.calls.at(-1)[0]).toContain(
-      'Could not perform the search: Season and episode are required for shows.',
-    );
-  });
-
-  it('formats top results returned by the search service', async () => {
-    const editReply = jest.fn();
-    ensureActivePage.mockResolvedValue({ page: {}, revived: false });
-    runSearch.mockResolvedValue([
-      { name: 'Example s01e01', quality: '1080p', sizeText: '1.4 GB', health: 150 },
-      { name: 'Example s01e01 720p', quality: '720p', sizeText: '900 MB', health: 120 },
-    ]);
-
-    const options = {
-      getString: jest.fn((name) => {
-        if (name === 'type') return 'show';
-        if (name === 'name') return 'Example';
-        return null;
-      }),
-      getInteger: jest.fn((name) => {
-        if (name === 'season') return 1;
-        if (name === 'episode') return 1;
-        return null;
-      }),
-    };
-
-    await searchCommand.execute({ deferReply: jest.fn(), editReply, options });
-
-    expect(runSearch).toHaveBeenCalled();
-    const finalMessage = editReply.mock.calls.at(-1)[0];
-    expect(finalMessage).toContain('Search finished with 2 result(s).');
-    expect(finalMessage).toContain('1. Example s01e01 — Quality: 1080P; Size: 1.4 GB; Health: 150 health/seed score');
-    expect(finalMessage).toContain('Results are ordered best to worst based on health, quality, and reasonable size.');
   });
 });

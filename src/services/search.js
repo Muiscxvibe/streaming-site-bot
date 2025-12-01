@@ -3,6 +3,44 @@ const RESULTS_TBODY_XPATH = '/html/body/div[1]/div[6]/div[1]/table[2]/tbody';
 
 const QUALITY_ORDER = ['2160p', '1440p', '1080p', '720p', '480p', '360p'];
 
+function buildSearchTerm(type, name, season, episode) {
+  if (!type || !name) {
+    throw new Error('Type (movie/show) and name are required to search.');
+  }
+
+  if (type === 'show') {
+    if (season == null || episode == null) {
+      throw new Error('Season and episode are required for shows.');
+    }
+
+    const paddedSeason = String(season).padStart(2, '0');
+    const paddedEpisode = String(episode).padStart(2, '0');
+    return `${name} s${paddedSeason}e${paddedEpisode}`;
+  }
+
+  return name;
+}
+
+function formatResults(results, term) {
+  if (!results.length) {
+    return `No matching results were found for "${term}".`;
+  }
+
+  const lines = results.map((result, index) => {
+    const quality = result.quality ? result.quality.toUpperCase() : 'Unknown quality';
+    const size = result.sizeText || 'Unknown size';
+    const health = result.health ? `${result.health} health/seed score` : 'Unknown health';
+
+    return `${index + 1}. ${result.name} — Quality: ${quality}; Size: ${size}; Health: ${health}`;
+  });
+
+  return [
+    'Top matches ordered by health, quality, then smaller sizes:',
+    ...lines,
+    'Results are ordered best to worst based on health, quality, and reasonable size.',
+  ].join('\n');
+}
+
 function toSizeMb(sizeText) {
   if (!sizeText) return null;
   const match = sizeText.match(/([\d.]+)\s*(TB|GB|MB|KB)/i);
@@ -133,6 +171,8 @@ async function runSearch(page, searchTerm, report = () => {}) {
 module.exports = {
   FORM_XPATH,
   RESULTS_TBODY_XPATH,
+  buildSearchTerm,
+  formatResults,
   runSearch,
   normalizeResults,
   sortResults,

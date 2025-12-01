@@ -1,13 +1,14 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { openWebsite } = require('../services/browser');
+const { openWebsite, ensureActivePage } = require('../services/browser');
 const { openWithFlareSolverr } = require('../services/flaresolverr');
 const { getWebsite } = require('../services/websiteStore');
 const { createProgressTracker } = require('../services/progress');
+const { buildSearchTerm, formatResults, runSearch } = require('../services/search');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('go-to')
-    .setDescription('Open the saved website in a browser')
+    .setDescription('Open the saved website and optionally search it')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addBooleanOption((option) =>
       option
@@ -20,6 +21,22 @@ module.exports = {
         .setName('use-flaresolverr')
         .setDescription('Route through FlareSolverr to bypass human verification (requires FLARESOLVERR_URL)')
         .setRequired(false),
+    )
+    .addStringOption((option) =>
+      option
+        .setName('type')
+        .setDescription('Search type (movie or show). Provide name to trigger a search.')
+        .setRequired(false)
+        .addChoices({ name: 'movie', value: 'movie' }, { name: 'show', value: 'show' }),
+    )
+    .addStringOption((option) =>
+      option.setName('name').setDescription('Title to search for (triggers search when provided)').setRequired(false),
+    )
+    .addIntegerOption((option) =>
+      option.setName('season').setDescription('Season number (required for shows)').setRequired(false),
+    )
+    .addIntegerOption((option) =>
+      option.setName('episode').setDescription('Episode number (required for shows)').setRequired(false),
     ),
   async execute(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -38,6 +55,10 @@ module.exports = {
 
     const useFlareSolverr = interaction.options?.getBoolean('use-flaresolverr') ?? false;
     const headless = interaction.options?.getBoolean('headless') ?? true;
+    const searchType = interaction.options?.getString('type');
+    const searchName = interaction.options?.getString('name');
+    const season = interaction.options?.getInteger('season');
+    const episode = interaction.options?.getInteger('episode');
     const modeLabel = headless
       ? 'in a headless browser'
       : 'with headless mode disabled. The window will stay open until you close it.';
@@ -56,9 +77,38 @@ module.exports = {
         const normalized = await openWebsite(storedWebsite, headless);
         await progress.complete(`Opened ${normalized} ${modeLabel}`);
       }
+
+      const wantsSearch = Boolean(searchType || searchName || season != null || episode != null);
+
+      if (!wantsSearch) {
+        return;
+      }
+
+      await progress.info('Preparing to search the opened site...');
+
+      const { page, revived } = await ensureActivePage();
+
+      if (!page) {
+        await progress.fail('No active browser session found. Run /go-to again to load the site.');
+        return;
+      }
+
+      if (revived) {
+        await progress.info('Recovered the active browser page.');
+      }
+
+      await progress.success('Browser session ready.');
+
+      const searchTerm = buildSearchTerm(searchType, searchName, season, episode);
+      await progress.info(`Searching for "${searchTerm}"...`);
+      const results = await runSearch(page, searchTerm, (step) => progress.info(step));
+      await progress.success(`Search finished with ${results.length} result(s).`);
+
+      const message = formatResults(results, searchTerm);
+      await progress.complete(message);
     } catch (error) {
       console.error('[go-to] Failed to open site', error);
-      await progress.fail(`Could not open that URL: ${error.message}`);
+      await progress.fail(`Could not complete the request: ${error.message}`);
     }
   },
 };
