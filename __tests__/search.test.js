@@ -102,6 +102,20 @@ describe('runSearch', () => {
     expect(download).toBe('magnet:?xt=urn:btih:456');
   });
 
+  it('returns detail url when it is already a magnet link', () => {
+    const magnetUrl = 'magnet:?xt=urn:btih:789';
+    const download = extractDownloadLink('', magnetUrl);
+
+    expect(download).toBe(magnetUrl);
+  });
+
+  it('returns detail url when it is a direct torrent link', () => {
+    const torrentUrl = 'https://itorrents.net/file.torrent';
+    const download = extractDownloadLink('', torrentUrl);
+
+    expect(download).toBe(torrentUrl);
+  });
+
   it('falls back to any torrent link when selectors miss', () => {
     const detailHtml = `
       <html>

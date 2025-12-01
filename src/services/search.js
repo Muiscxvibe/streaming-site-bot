@@ -234,7 +234,15 @@ async function runSearch(searchTerm, baseUrl, report = () => {}, { useFlareSolve
 }
 
 function extractDownloadLink(html, detailUrl) {
-  const $ = cheerio.load(html);
+  if (detailUrl) {
+    const normalized = detailUrl.toLowerCase();
+
+    if (detailUrl.startsWith('magnet:') || normalized.endsWith('.torrent')) {
+      return detailUrl;
+    }
+  }
+
+  const $ = cheerio.load(html || '');
 
   const resolveHref = (href) => {
     if (!href) return null;
