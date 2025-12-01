@@ -61,7 +61,7 @@ async function openWebsite(target, headless = true) {
     throw error;
   }
 
-  return url;
+  return { url, page: currentPage };
 }
 
 function getActivePage() {

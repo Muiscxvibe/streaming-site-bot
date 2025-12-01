@@ -1,5 +1,5 @@
 jest.mock('../src/services/browser', () => ({
-  openWebsite: jest.fn().mockResolvedValue('https://example.com/'),
+  openWebsite: jest.fn().mockResolvedValue({ url: 'https://example.com/', page: { $x: jest.fn() } }),
   ensureUrl: jest.fn((url) => `${url}/`),
   ensureActivePage: jest.fn(),
 }));
@@ -143,7 +143,7 @@ describe('go-to command', () => {
     const deferReply = jest.fn();
     const editReply = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
-    ensureActivePage.mockResolvedValue({ page: {}, revived: false });
+    ensureActivePage.mockResolvedValue({ page: { $x: jest.fn() }, revived: false });
     runSearch.mockResolvedValue([
       { name: 'Example s01e01', quality: '1080p', sizeText: '1.4 GB', health: 150 },
       { name: 'Example s01e01 720p', quality: '720p', sizeText: '900 MB', health: 120 },

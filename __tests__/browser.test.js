@@ -44,9 +44,10 @@ describe('ensureUrl', () => {
 
 describe('openWebsite', () => {
   it('launches a headless browser and navigates', async () => {
-    const normalized = await openWebsite('example.com');
+    const { url, page } = await openWebsite('example.com');
 
-    expect(normalized).toBe('https://example.com/');
+    expect(url).toBe('https://example.com/');
+    expect(page).toBe(puppeteer.__mockPage);
     expect(puppeteer.launch).toHaveBeenCalledWith({ headless: true });
     expect(puppeteer.__mockBrowser.newPage).toHaveBeenCalled();
     expect(puppeteer.__mockGoto).toHaveBeenCalledWith('https://example.com/', GOTO_OPTIONS);

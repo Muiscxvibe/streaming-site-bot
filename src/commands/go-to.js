@@ -63,6 +63,8 @@ module.exports = {
       ? 'in a headless browser'
       : 'with headless mode disabled. The window will stay open until you close it.';
 
+    let openedPage = null;
+
     try {
       if (useFlareSolverr) {
         await progress.info('Requesting FlareSolverr to bypass verification...');
@@ -70,11 +72,13 @@ module.exports = {
         await progress.success(`FlareSolverr resolved the page via ${endpoint}`);
 
         await progress.info('Opening resolved page in browser...');
-        const normalized = await openWebsite(url, headless);
+        const { url: normalized, page } = await openWebsite(url, headless);
+        openedPage = page;
         await progress.complete(`Opened ${normalized} via FlareSolverr (${endpoint}) ${modeLabel}`);
       } else {
         await progress.info('Opening saved page in browser...');
-        const normalized = await openWebsite(storedWebsite, headless);
+        const { url: normalized, page } = await openWebsite(storedWebsite, headless);
+        openedPage = page;
         await progress.complete(`Opened ${normalized} ${modeLabel}`);
       }
 
@@ -86,9 +90,16 @@ module.exports = {
 
       await progress.info('Preparing to search the opened site...');
 
-      const { page, revived } = await ensureActivePage();
+      let searchPage = openedPage;
+      let revived = false;
 
-      if (!page) {
+      if (!searchPage || typeof searchPage.$x !== 'function') {
+        const revivedResult = await ensureActivePage();
+        searchPage = revivedResult.page;
+        revived = revivedResult.revived;
+      }
+
+      if (!searchPage) {
         await progress.fail('No active browser session found. Run /go-to again to load the site.');
         return;
       }
@@ -101,7 +112,7 @@ module.exports = {
 
       const searchTerm = buildSearchTerm(searchType, searchName, season, episode);
       await progress.info(`Searching for "${searchTerm}"...`);
-      const results = await runSearch(page, searchTerm, (step) => progress.info(step));
+      const results = await runSearch(searchPage, searchTerm, (step) => progress.info(step));
       await progress.success(`Search finished with ${results.length} result(s).`);
 
       const message = formatResults(results, searchTerm);
