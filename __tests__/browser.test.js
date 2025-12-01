@@ -36,6 +36,6 @@ describe('openWebsite', () => {
     expect(puppeteer.launch).toHaveBeenCalledWith({ headless: true });
     expect(puppeteer.__mockBrowser.newPage).toHaveBeenCalled();
     expect(puppeteer.__mockGoto).toHaveBeenCalledWith('https://example.com/', GOTO_OPTIONS);
-    expect(puppeteer.__mockBrowser.close).toHaveBeenCalled();
+    expect(puppeteer.__mockBrowser.close).not.toHaveBeenCalled();
   });
 });

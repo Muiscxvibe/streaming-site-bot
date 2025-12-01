@@ -1,9 +1,10 @@
 # streaming-site-bot
 
-Discord bot that provides two admin-only slash commands:
+Discord bot that provides three admin-only slash commands:
 
 - `/website`: store a website URL for later browsing.
 - `/go-to`: open the stored website on the machine running the bot, with an option to disable headless mode (leaves the window open for you to close) or route through FlareSolverr while still launching the browser.
+- `/search`: after `/go-to` loads the target site, fill in the search form, submit it, and list the five healthiest results ordered by health, quality, and sensible file size (for shows, pass season and episode to build `sXXeYY`).
 
 ## Setup
 1. Install dependencies:

@@ -13,27 +13,58 @@ function ensureUrl(target) {
   return parsed.toString();
 }
 
+let browserInstance = null;
+let currentPage = null;
+let currentHeadless = true;
+
+async function ensureBrowser(headless = true) {
+  const isRunning = browserInstance && browserInstance.process() && !browserInstance.process().killed;
+
+  if (isRunning && currentHeadless === headless) {
+    return browserInstance;
+  }
+
+  if (browserInstance) {
+    await browserInstance.close();
+  }
+
+  browserInstance = await puppeteer.launch({ headless });
+  currentHeadless = headless;
+  return browserInstance;
+}
+
 async function openWebsite(target, headless = true) {
   const url = ensureUrl(target);
-  const browser = await puppeteer.launch({ headless });
-  const page = await browser.newPage();
+  const browser = await ensureBrowser(headless);
+
+  if (currentPage && !currentPage.isClosed()) {
+    await currentPage.close();
+  }
+
+  currentPage = await browser.newPage();
 
   try {
-    await page.goto(url, GOTO_OPTIONS);
+    await currentPage.goto(url, GOTO_OPTIONS);
   } catch (error) {
     await browser.close();
+    browserInstance = null;
+    currentPage = null;
     throw error;
   }
 
-  if (headless) {
-    await browser.close();
-  }
-
   return url;
+}
+
+function getActivePage() {
+  if (currentPage && !currentPage.isClosed()) {
+    return currentPage;
+  }
+  return null;
 }
 
 module.exports = {
   ensureUrl,
   openWebsite,
   GOTO_OPTIONS,
+  getActivePage,
 };

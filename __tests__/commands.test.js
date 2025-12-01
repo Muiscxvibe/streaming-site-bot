@@ -1,6 +1,7 @@
 jest.mock('../src/services/browser', () => ({
   openWebsite: jest.fn().mockResolvedValue('https://example.com/'),
   ensureUrl: jest.fn((url) => `${url}/`),
+  getActivePage: jest.fn(),
 }));
 jest.mock('../src/services/websiteStore', () => ({
   setWebsite: jest.fn(),
@@ -12,12 +13,17 @@ jest.mock('../src/services/flaresolverr', () => ({
     endpoint: 'http://solver:8191',
   }),
 }));
+jest.mock('../src/services/search', () => ({
+  runSearch: jest.fn(),
+}));
 
-const { openWebsite } = require('../src/services/browser');
+const { openWebsite, getActivePage } = require('../src/services/browser');
 const { setWebsite, getWebsite } = require('../src/services/websiteStore');
 const { openWithFlareSolverr } = require('../src/services/flaresolverr');
+const { runSearch } = require('../src/services/search');
 const goToCommand = require('../src/commands/go-to');
 const websiteCommand = require('../src/commands/website');
+const searchCommand = require('../src/commands/search');
 const { MessageFlags } = require('discord.js');
 
 beforeEach(() => {
@@ -128,5 +134,67 @@ describe('website command', () => {
       content: 'Saved website: https://discord.com/. Use /go-to to open it on the bot machine.',
       flags: MessageFlags.Ephemeral,
     });
+  });
+});
+
+describe('search command', () => {
+  it('requires an active browser session', async () => {
+    const editReply = jest.fn();
+    getActivePage.mockReturnValue(null);
+
+    await searchCommand.execute({ deferReply: jest.fn(), editReply });
+
+    expect(editReply).toHaveBeenCalledWith('No active browser session found. Run /go-to first to load the site.');
+  });
+
+  it('validates show inputs for season and episode', async () => {
+    const editReply = jest.fn();
+    getActivePage.mockReturnValue({});
+    const options = {
+      getString: jest.fn((name) => {
+        if (name === 'type') return 'show';
+        if (name === 'name') return 'Example Show';
+        return null;
+      }),
+      getInteger: jest.fn().mockReturnValue(null),
+    };
+
+    await searchCommand.execute({ deferReply: jest.fn(), editReply, options });
+
+    expect(editReply).toHaveBeenCalledWith(
+      'Could not perform the search: Season and episode are required for shows.',
+    );
+  });
+
+  it('formats top results returned by the search service', async () => {
+    const editReply = jest.fn();
+    getActivePage.mockReturnValue({});
+    runSearch.mockResolvedValue([
+      { name: 'Example s01e01', quality: '1080p', sizeText: '1.4 GB', health: 150 },
+      { name: 'Example s01e01 720p', quality: '720p', sizeText: '900 MB', health: 120 },
+    ]);
+
+    const options = {
+      getString: jest.fn((name) => {
+        if (name === 'type') return 'show';
+        if (name === 'name') return 'Example';
+        return null;
+      }),
+      getInteger: jest.fn((name) => {
+        if (name === 'season') return 1;
+        if (name === 'episode') return 1;
+        return null;
+      }),
+    };
+
+    await searchCommand.execute({ deferReply: jest.fn(), editReply, options });
+
+    expect(runSearch).toHaveBeenCalled();
+    expect(editReply).toHaveBeenCalledWith(
+      'Top matches ordered by health, quality, then smaller sizes:\n' +
+        '1. Example s01e01 — Quality: 1080P; Size: 1.4 GB; Health: 150 health/seed score\n' +
+        '2. Example s01e01 720p — Quality: 720P; Size: 900 MB; Health: 120 health/seed score\n' +
+        'Results are ordered best to worst based on health, quality, and reasonable size.',
+    );
   });
 });
