@@ -64,6 +64,7 @@ module.exports = {
       : 'with headless mode disabled. The window will stay open until you close it.';
 
     let openedPage = null;
+    const baseSearchUrl = storedWebsite;
 
     try {
       if (useFlareSolverr) {
@@ -109,7 +110,7 @@ module.exports = {
       let results;
 
       try {
-        results = await runSearch(openedPage, searchTerm, (step) => progress.info(step));
+        results = await runSearch(openedPage, searchTerm, (step) => progress.info(step), baseSearchUrl);
       } catch (error) {
         const needsRecovery = /Active browser page is unavailable/i.test(error.message) || !isPageUsable(openedPage);
 
@@ -128,7 +129,7 @@ module.exports = {
 
         openedPage = revivedPage;
         await progress.success(revived ? 'Browser session revived. Retrying search...' : 'Using active page. Retrying search...');
-        results = await runSearch(openedPage, searchTerm, (step) => progress.info(step));
+        results = await runSearch(openedPage, searchTerm, (step) => progress.info(step), baseSearchUrl);
       }
       await progress.success(`Search finished with ${results.length} result(s).`);
 

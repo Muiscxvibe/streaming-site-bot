@@ -180,6 +180,8 @@ describe('go-to command', () => {
 
     expect(openWebsite).toHaveBeenCalledWith('https://example.com/', true);
     expect(runSearch).toHaveBeenCalled();
+    const searchCall = runSearch.mock.calls.at(-1);
+    expect(searchCall[3]).toBe('https://example.com/');
     const finalMessage = editReply.mock.calls.at(-1)[0];
     expect(finalMessage).toContain('Search finished with 2 result(s).');
     expect(finalMessage).toContain('Top matches ordered by health, quality, then smaller sizes:');

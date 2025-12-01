@@ -1,6 +1,9 @@
 const { ensureUrl, GOTO_OPTIONS } = require('./browser');
 
-const RESULTS_TBODY_XPATH = '/html/body/div[1]/div[6]/div[1]/table[2]/tbody';
+const RESULTS_TABLE_XPATHS = [
+  '/html/body/div/div[6]/div[1]/table[2]',
+  '/html/body/div[1]/div[6]/div[1]/table[2]',
+];
 
 const QUALITY_ORDER = ['2160p', '1440p', '1080p', '720p', '480p', '360p'];
 
@@ -160,7 +163,22 @@ function sortResults(results) {
     .filter((result) => result.name);
 }
 
-async function runSearch(page, searchTerm, report = () => {}) {
+async function findResultsTable(page) {
+  let lastError;
+
+  for (const xpath of RESULTS_TABLE_XPATHS) {
+    try {
+      const node = await waitForXPath(page, xpath, { timeout: 20000 });
+      return node;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error('Results table could not be located.');
+}
+
+async function runSearch(page, searchTerm, report = () => {}, baseUrl) {
   if (!page || typeof page.$x !== 'function') {
     throw new Error('Active browser page is unavailable. Run /go-to again to refresh it.');
   }
@@ -172,13 +190,15 @@ async function runSearch(page, searchTerm, report = () => {}) {
   await report('Focusing active page');
   await page.bringToFront().catch(() => {});
 
-  await report('Navigating directly to the search URL');
-  const searchUrl = buildSearchUrl(page.url(), searchTerm);
+  const searchBase = baseUrl || page.url();
+  const searchUrl = buildSearchUrl(searchBase, searchTerm);
+  await report(`Navigating directly to the search URL: ${searchUrl}`);
   await page.goto(searchUrl, GOTO_OPTIONS);
 
   await report('Waiting for results table');
-  const resultsBody = await waitForXPath(page, RESULTS_TBODY_XPATH, { timeout: 20000 });
-  const rows = await resultsBody.$x('./tr');
+  const resultsTable = await findResultsTable(page);
+  const tbody = await resultsTable.$('tbody');
+  const rows = tbody ? await tbody.$x('./tr') : await resultsTable.$x('./tr');
 
   await report(`Found ${rows.length} row(s) in the results table`);
 
@@ -197,7 +217,7 @@ async function runSearch(page, searchTerm, report = () => {}) {
 }
 
 module.exports = {
-  RESULTS_TBODY_XPATH,
+  RESULTS_TABLE_XPATHS,
   buildSearchTerm,
   buildSearchUrl,
   formatResults,
