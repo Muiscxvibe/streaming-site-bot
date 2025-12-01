@@ -23,7 +23,7 @@ Each command streams progress updates back to Discord (and logs to the bot conso
 npm start
 ```
 
-The bot registers both slash commands on startup for the configured guild.
+The bot registers both slash commands on startup for the configured guild and removes any stale guild/global commands that are no longer defined in the code.
 
 ## Tests
 Jest tests mock the browser launcher and command interactions:

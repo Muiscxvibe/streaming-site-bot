@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { openWebsite, ensureActivePage } = require('../services/browser');
+const { openWebsite, ensureActivePage, isPageUsable } = require('../services/browser');
 const { openWithFlareSolverr } = require('../services/flaresolverr');
 const { getWebsite } = require('../services/websiteStore');
 const { createProgressTracker } = require('../services/progress');
@@ -93,15 +93,19 @@ module.exports = {
       let searchPage = openedPage;
       let revived = false;
 
-      if (!searchPage || typeof searchPage.$x !== 'function') {
+      if (!isPageUsable(searchPage)) {
         const revivedResult = await ensureActivePage();
         searchPage = revivedResult.page;
         revived = revivedResult.revived;
       }
 
-      if (!searchPage) {
+      if (!isPageUsable(searchPage)) {
         await progress.fail('No active browser session found. Run /go-to again to load the site.');
         return;
+      }
+
+      if (searchPage === openedPage && isPageUsable(searchPage)) {
+        await progress.info('Using the freshly opened page for search.');
       }
 
       if (revived) {

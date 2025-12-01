@@ -2,6 +2,7 @@ jest.mock('../src/services/browser', () => ({
   openWebsite: jest.fn().mockResolvedValue({ url: 'https://example.com/', page: { $x: jest.fn() } }),
   ensureUrl: jest.fn((url) => `${url}/`),
   ensureActivePage: jest.fn(),
+  isPageUsable: jest.fn((page) => Boolean(page && typeof page.$x === 'function')),
 }));
 jest.mock('../src/services/websiteStore', () => ({
   setWebsite: jest.fn(),
@@ -21,7 +22,7 @@ jest.mock('../src/services/search', () => {
   };
 });
 
-const { openWebsite, ensureActivePage } = require('../src/services/browser');
+const { openWebsite, ensureActivePage, isPageUsable } = require('../src/services/browser');
 const { setWebsite, getWebsite } = require('../src/services/websiteStore');
 const { openWithFlareSolverr } = require('../src/services/flaresolverr');
 const { runSearch } = require('../src/services/search');
@@ -180,7 +181,7 @@ describe('go-to command', () => {
     const deferReply = jest.fn();
     const editReply = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
-    ensureActivePage.mockResolvedValue({ page: {}, revived: false });
+    ensureActivePage.mockResolvedValue({ page: { $x: jest.fn() }, revived: false });
 
     const options = {
       getBoolean: jest.fn().mockReturnValue(null),

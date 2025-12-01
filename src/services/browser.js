@@ -119,4 +119,5 @@ module.exports = {
   GOTO_OPTIONS,
   getActivePage,
   ensureActivePage,
+  isPageUsable,
 };

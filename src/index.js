@@ -30,8 +30,33 @@ for (const file of commandFiles) {
 
 const rest = new REST({ version: '10' }).setToken(token);
 
+async function removeStaleCommands(commandPayloads) {
+  const desiredNames = new Set(commandPayloads.map((command) => command.name));
+
+  const [guildCommands, globalCommands] = await Promise.all([
+    rest.get(Routes.applicationGuildCommands(clientId, guildId)),
+    rest.get(Routes.applicationCommands(clientId)),
+  ]);
+
+  const staleGuild = guildCommands.filter((command) => !desiredNames.has(command.name));
+  const staleGlobal = globalCommands.filter((command) => !desiredNames.has(command.name));
+
+  for (const command of staleGuild) {
+    await rest.delete(Routes.applicationGuildCommand(clientId, guildId, command.id));
+    console.log(`Removed stale guild command: ${command.name}`);
+  }
+
+  for (const command of staleGlobal) {
+    await rest.delete(Routes.applicationCommand(clientId, command.id));
+    console.log(`Removed stale global command: ${command.name}`);
+  }
+}
+
 async function registerCommands() {
   const commandPayloads = client.commands.map((command) => command.data.toJSON());
+
+  await removeStaleCommands(commandPayloads);
+
   await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commandPayloads });
   console.log(`Registered ${commandPayloads.length} commands for guild ${guildId}.`);
 }
