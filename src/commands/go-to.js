@@ -32,16 +32,17 @@ module.exports = {
 
     const useFlareSolverr = interaction.options?.getBoolean('use-flaresolverr') ?? false;
     const headless = interaction.options?.getBoolean('headless') ?? true;
+    const modeLabel = headless
+      ? 'in a headless browser'
+      : 'with headless mode disabled. The window will stay open until you close it.';
 
     try {
       if (useFlareSolverr) {
         const { url, endpoint } = await openWithFlareSolverr(storedWebsite);
-        await interaction.editReply(`Opened ${url} via FlareSolverr (${endpoint}).`);
+        const normalized = await openWebsite(url, headless);
+        await interaction.editReply(`Opened ${normalized} via FlareSolverr (${endpoint}) ${modeLabel}`);
       } else {
         const normalized = await openWebsite(storedWebsite, headless);
-        const modeLabel = headless
-          ? 'in a headless browser'
-          : 'with headless mode disabled. The window will stay open until you close it.';
         await interaction.editReply(`Opened ${normalized} ${modeLabel}`);
       }
     } catch (error) {

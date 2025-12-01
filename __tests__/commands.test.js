@@ -84,9 +84,34 @@ describe('go-to command', () => {
     await goToCommand.execute(interaction);
 
     expect(openWithFlareSolverr).toHaveBeenCalledWith('https://example.com/');
-    expect(openWebsite).not.toHaveBeenCalled();
+    expect(openWebsite).toHaveBeenCalledWith('https://example.com/', true);
     expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
-    expect(editReply).toHaveBeenCalledWith('Opened https://example.com/ via FlareSolverr (http://solver:8191).');
+    expect(editReply).toHaveBeenCalledWith(
+      'Opened https://example.com/ via FlareSolverr (http://solver:8191) in a headless browser',
+    );
+  });
+
+  it('keeps the browser visible when flaresolverr is used without headless mode', async () => {
+    const deferReply = jest.fn();
+    const editReply = jest.fn();
+    getWebsite.mockReturnValue('https://example.com/');
+    const options = {
+      getBoolean: jest.fn((name) => {
+        if (name === 'use-flaresolverr') return true;
+        if (name === 'headless') return false;
+        return null;
+      }),
+    };
+    const interaction = { deferReply, editReply, options };
+
+    await goToCommand.execute(interaction);
+
+    expect(openWithFlareSolverr).toHaveBeenCalledWith('https://example.com/');
+    expect(openWebsite).toHaveBeenCalledWith('https://example.com/', false);
+    expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(editReply).toHaveBeenCalledWith(
+      'Opened https://example.com/ via FlareSolverr (http://solver:8191) with headless mode disabled. The window will stay open until you close it.',
+    );
   });
 });
 
