@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const { ensureUrl } = require('../services/browser');
 const { setWebsite } = require('../services/websiteStore');
 
@@ -20,7 +20,7 @@ module.exports = {
 
     await interaction.reply({
       content: `Saved website: ${normalized}. Use /go-to to open it on the bot machine.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   },
 };

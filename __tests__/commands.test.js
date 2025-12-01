@@ -18,6 +18,7 @@ const { setWebsite, getWebsite } = require('../src/services/websiteStore');
 const { openWithFlareSolverr } = require('../src/services/flaresolverr');
 const goToCommand = require('../src/commands/go-to');
 const websiteCommand = require('../src/commands/website');
+const { MessageFlags } = require('discord.js');
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -25,69 +26,65 @@ beforeEach(() => {
 
 describe('go-to command', () => {
   it('replies with success message after opening stored site', async () => {
-    const reply = jest.fn();
+    const deferReply = jest.fn();
+    const editReply = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
     const options = {
       getBoolean: jest.fn((name) => (name === 'headless' ? null : false)),
     };
-    const interaction = { reply, options };
+    const interaction = { deferReply, editReply, options };
 
     await goToCommand.execute(interaction);
 
     expect(openWebsite).toHaveBeenCalledWith('https://example.com/', true);
-    expect(reply).toHaveBeenCalledWith({
-      content: 'Opened https://example.com/ in a headless browser.',
-      ephemeral: true,
-    });
+    expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(editReply).toHaveBeenCalledWith('Opened https://example.com/ in a headless browser.');
   });
 
   it('allows disabling headless mode', async () => {
-    const reply = jest.fn();
+    const deferReply = jest.fn();
+    const editReply = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
     const options = {
       getBoolean: jest.fn((name) => (name === 'headless' ? false : false)),
     };
-    const interaction = { reply, options };
+    const interaction = { deferReply, editReply, options };
 
     await goToCommand.execute(interaction);
 
     expect(openWebsite).toHaveBeenCalledWith('https://example.com/', false);
-    expect(reply).toHaveBeenCalledWith({
-      content: 'Opened https://example.com/ with headless mode disabled.',
-      ephemeral: true,
-    });
+    expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(editReply).toHaveBeenCalledWith('Opened https://example.com/ with headless mode disabled.');
   });
 
   it('informs users when no site is saved', async () => {
-    const reply = jest.fn();
+    const deferReply = jest.fn();
+    const editReply = jest.fn();
     getWebsite.mockReturnValue(null);
-    const interaction = { reply };
+    const interaction = { deferReply, editReply };
 
     await goToCommand.execute(interaction);
 
     expect(openWebsite).not.toHaveBeenCalled();
-    expect(reply).toHaveBeenCalledWith({
-      content: 'No website saved yet. Use /website to set one first.',
-      ephemeral: true,
-    });
+    expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(editReply).toHaveBeenCalledWith('No website saved yet. Use /website to set one first.');
   });
 
   it('routes through flaresolverr when requested', async () => {
-    const reply = jest.fn();
+    const deferReply = jest.fn();
+    const editReply = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
     const options = {
       getBoolean: jest.fn((name) => (name === 'use-flaresolverr' ? true : null)),
     };
-    const interaction = { reply, options };
+    const interaction = { deferReply, editReply, options };
 
     await goToCommand.execute(interaction);
 
     expect(openWithFlareSolverr).toHaveBeenCalledWith('https://example.com/');
     expect(openWebsite).not.toHaveBeenCalled();
-    expect(reply).toHaveBeenCalledWith({
-      content: 'Opened https://example.com/ via FlareSolverr (http://solver:8191).',
-      ephemeral: true,
-    });
+    expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(editReply).toHaveBeenCalledWith('Opened https://example.com/ via FlareSolverr (http://solver:8191).');
   });
 });
 
@@ -102,7 +99,7 @@ describe('website command', () => {
     expect(setWebsite).toHaveBeenCalledWith('https://discord.com/');
     expect(reply).toHaveBeenCalledWith({
       content: 'Saved website: https://discord.com/. Use /go-to to open it on the bot machine.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   });
 });

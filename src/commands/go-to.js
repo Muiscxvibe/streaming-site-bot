@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const { openWebsite } = require('../services/browser');
 const { openWithFlareSolverr } = require('../services/flaresolverr');
 const { getWebsite } = require('../services/websiteStore');
@@ -21,13 +21,12 @@ module.exports = {
         .setRequired(false),
     ),
   async execute(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
     const storedWebsite = getWebsite();
 
     if (!storedWebsite) {
-      await interaction.reply({
-        content: 'No website saved yet. Use /website to set one first.',
-        ephemeral: true,
-      });
+      await interaction.editReply('No website saved yet. Use /website to set one first.');
       return;
     }
 
@@ -37,23 +36,14 @@ module.exports = {
     try {
       if (useFlareSolverr) {
         const { url, endpoint } = await openWithFlareSolverr(storedWebsite);
-        await interaction.reply({
-          content: `Opened ${url} via FlareSolverr (${endpoint}).`,
-          ephemeral: true,
-        });
+        await interaction.editReply(`Opened ${url} via FlareSolverr (${endpoint}).`);
       } else {
         const normalized = await openWebsite(storedWebsite, headless);
         const modeLabel = headless ? 'in a headless browser' : 'with headless mode disabled';
-        await interaction.reply({
-          content: `Opened ${normalized} ${modeLabel}.`,
-          ephemeral: true,
-        });
+        await interaction.editReply(`Opened ${normalized} ${modeLabel}.`);
       }
     } catch (error) {
-      await interaction.reply({
-        content: `Could not open that URL: ${error.message}`,
-        ephemeral: true,
-      });
+      await interaction.editReply(`Could not open that URL: ${error.message}`);
     }
   },
 };

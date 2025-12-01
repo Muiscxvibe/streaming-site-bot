@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { Client, Collection, Events, GatewayIntentBits } = require('discord.js');
+const { Client, Collection, Events, GatewayIntentBits, MessageFlags } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 require('dotenv').config();
@@ -58,9 +58,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const responseContent = 'There was an error while executing this command!';
 
     if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({ content: responseContent, ephemeral: true });
+      await interaction.followUp({ content: responseContent, flags: MessageFlags.Ephemeral });
     } else {
-      await interaction.reply({ content: responseContent, ephemeral: true });
+      await interaction.reply({ content: responseContent, flags: MessageFlags.Ephemeral });
     }
   }
 });
