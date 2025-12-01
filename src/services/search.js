@@ -1,39 +1,27 @@
-const { ensureUrl, GOTO_OPTIONS } = require('./browser');
+const cheerio = require('cheerio');
+const { ensureUrl } = require('./browser');
+const { fetchWithFallback, fetchPageWithFlareSolverr } = require('./flaresolverr');
 
-const RESULTS_TABLE_XPATHS = [
-  '/html/body/div/div[6]/div[1]/table[2]',
-  '/html/body/div[1]/div[6]/div[1]/table[2]',
+const RESULT_ROW_SELECTORS = [
+  'body > div:nth-of-type(1) > div:nth-of-type(6) > div:nth-of-type(1) > table:nth-of-type(2) tbody tr',
+  'div:nth-of-type(6) table:nth-of-type(2) tbody tr',
+  'table:nth-of-type(2) tbody tr',
+  'tbody tr',
+  'table tr',
 ];
 
 const QUALITY_ORDER = ['2160p', '1440p', '1080p', '720p', '480p', '360p'];
 
-async function waitForXPath(page, xpath, options = {}) {
-  if (typeof page.waitForXPath === 'function') {
-    return page.waitForXPath(xpath, options);
+async function fetchPageHtml(targetUrl) {
+  const url = ensureUrl(targetUrl);
+  const response = await fetchWithFallback(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${url}: ${response.status}`);
   }
 
-  const timeout = options.timeout ?? 30000;
-  await page.waitForFunction(
-    (target) => {
-      try {
-        return Boolean(
-          document.evaluate(target, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue,
-        );
-      } catch (error) {
-        console.warn('[search] XPath evaluation failed', error);
-        return false;
-      }
-    },
-    { timeout },
-    xpath,
-  );
-
-  const handles = await page.$x(xpath);
-  if (!handles.length) {
-    throw new Error(`Element not found for XPath: ${xpath}`);
-  }
-
-  return handles[0];
+  const html = await response.text();
+  return { html, url };
 }
 
 function buildSearchTerm(type, name, season, episode) {
@@ -163,61 +151,60 @@ function sortResults(results) {
     .filter((result) => result.name);
 }
 
-async function findResultsTable(page) {
-  let lastError;
+function extractRowsFromHtml(html) {
+  const $ = cheerio.load(html);
 
-  for (const xpath of RESULTS_TABLE_XPATHS) {
-    try {
-      const node = await waitForXPath(page, xpath, { timeout: 20000 });
-      return node;
-    } catch (error) {
-      lastError = error;
+  for (const selector of RESULT_ROW_SELECTORS) {
+    const rows = $(selector).toArray();
+
+    if (rows.length) {
+      return rows.map((row) => {
+        const cells = $(row)
+          .find('td')
+          .toArray()
+          .map((cell) => $(cell).text().trim())
+          .filter(Boolean);
+
+        const text = cells.join(' ').trim() || $(row).text().trim();
+        return { cells, text };
+      });
     }
   }
 
-  throw lastError || new Error('Results table could not be located.');
+  return [];
 }
 
-async function runSearch(page, searchTerm, report = () => {}, baseUrl) {
-  if (!page || typeof page.$x !== 'function') {
-    throw new Error('Active browser page is unavailable. Run /go-to again to refresh it.');
-  }
-
+async function runSearch(searchTerm, baseUrl, report = () => {}, { useFlareSolverr = false } = {}) {
   if (!searchTerm) {
     throw new Error('A search term is required.');
   }
 
-  await report('Focusing active page');
-  await page.bringToFront().catch(() => {});
+  if (!baseUrl) {
+    throw new Error('A base URL is required.');
+  }
 
-  const searchBase = baseUrl || page.url();
-  const searchUrl = buildSearchUrl(searchBase, searchTerm);
+  const searchUrl = buildSearchUrl(baseUrl, searchTerm);
   await report(`Navigating directly to the search URL: ${searchUrl}`);
-  await page.goto(searchUrl, GOTO_OPTIONS);
 
-  await report('Waiting for results table');
-  const resultsTable = await findResultsTable(page);
-  const tbody = await resultsTable.$('tbody');
-  const rows = tbody ? await tbody.$x('./tr') : await resultsTable.$x('./tr');
+  const { html, url: fetchedUrl } = useFlareSolverr
+    ? await fetchPageWithFlareSolverr(searchUrl)
+    : await fetchPageHtml(searchUrl);
 
-  await report(`Found ${rows.length} row(s) in the results table`);
+  await report(`Fetched search page from ${fetchedUrl}`);
+  await report('Parsing results table');
 
-  const rawRows = await Promise.all(
-    rows.map(async (row) => ({
-      text: await row.evaluate((el) => el.innerText.trim()),
-      cells: await row.$$eval('td', (tds) => tds.map((td) => td.innerText.trim())),
-    })),
-  );
+  const rawRows = extractRowsFromHtml(html);
 
+  await report(`Found ${rawRows.length} row(s) in the results table`);
   await report('Normalizing and ranking results');
   const normalized = normalizeResults(rawRows);
-  const sorted = sortResults(normalized).slice(0, 5);
+  const results = sortResults(normalized).slice(0, 5);
 
-  return sorted;
+  return { results, searchUrl: fetchedUrl };
 }
 
 module.exports = {
-  RESULTS_TABLE_XPATHS,
+  RESULT_ROW_SELECTORS,
   buildSearchTerm,
   buildSearchUrl,
   formatResults,
@@ -225,5 +212,5 @@ module.exports = {
   normalizeResults,
   sortResults,
   slugifySearchTerm,
-  waitForXPath,
+  extractRowsFromHtml,
 };

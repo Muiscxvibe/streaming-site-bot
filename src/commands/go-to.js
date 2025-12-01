@@ -1,14 +1,12 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { openWebsite, isPageUsable, ensureActivePage, resetBrowser } = require('../services/browser');
-const { openWithFlareSolverr } = require('../services/flaresolverr');
 const { getWebsite } = require('../services/websiteStore');
 const { createProgressTracker } = require('../services/progress');
-const { buildSearchTerm, formatResults, runSearch } = require('../services/search');
+const { buildSearchTerm, formatResults, runSearch, buildSearchUrl } = require('../services/search');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('go-to')
-    .setDescription('Open the saved website and optionally search it')
+    .setDescription('Build a search URL from the saved website and list the best matches')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addBooleanOption((option) =>
       option
@@ -42,7 +40,7 @@ module.exports = {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const progress = createProgressTracker({ interaction, scope: 'go-to' });
-    await progress.info('Preparing to open the saved website...');
+    await progress.info('Preparing to build the search URL from the saved website...');
 
     const storedWebsite = getWebsite();
 
@@ -59,84 +57,27 @@ module.exports = {
     const searchName = interaction.options?.getString('name');
     const season = interaction.options?.getInteger('season');
     const episode = interaction.options?.getInteger('episode');
-    const modeLabel = headless
-      ? 'in a headless browser'
-      : 'with headless mode disabled. The window will stay open until you close it.';
-
-    let openedPage = null;
-    const baseSearchUrl = storedWebsite;
 
     try {
-      if (useFlareSolverr) {
-        await progress.info('Requesting FlareSolverr to bypass verification...');
-        const { url, endpoint } = await openWithFlareSolverr(storedWebsite);
-        await progress.success(`FlareSolverr resolved the page via ${endpoint}`);
-
-        await progress.info('Opening resolved page in browser...');
-        const { url: normalized, page } = await openWebsite(url, headless);
-        openedPage = page;
-        await progress.success(`Opened ${normalized} via FlareSolverr (${endpoint}) ${modeLabel}`);
-      } else {
-        await progress.info('Opening saved page in browser...');
-        const { url: normalized, page } = await openWebsite(storedWebsite, headless);
-        openedPage = page;
-        await progress.success(`Opened ${normalized} ${modeLabel}`);
-      }
-
-      const wantsSearch = Boolean(searchType || searchName || season != null || episode != null);
-
-      if (!wantsSearch) {
-        await progress.complete('Opened the saved site. Provide type/name (and season/episode for shows) to trigger an on-page search.');
-        return;
-      }
-
-      await progress.info('Preparing to search the opened site...');
-      if (!isPageUsable(openedPage)) {
-        await progress.info('Initial page looked unusable; restarting the browser and recovering the page...');
-        await resetBrowser();
-        const { page: revivedPage, revived } = await ensureActivePage({ allowRestart: true });
-        openedPage = revivedPage;
-        await progress.success(
-          revivedPage
-            ? revived
-              ? 'Browser session restarted and ready to search.'
-              : 'Browser session ready to search.'
-            : 'Proceeding after attempting to recover the page...'
-        );
-      }
-
       const searchTerm = buildSearchTerm(searchType, searchName, season, episode);
-      await progress.info(`Searching for "${searchTerm}"...`);
-      let results;
+      const searchUrl = buildSearchUrl(storedWebsite, searchTerm);
 
-      try {
-        results = await runSearch(openedPage, searchTerm, (step) => progress.info(step), baseSearchUrl);
-      } catch (error) {
-        const needsRecovery = /Active browser page is unavailable/i.test(error.message) || !isPageUsable(openedPage);
+      await progress.info(`Using options — headless: ${headless}, flaresolverr: ${useFlareSolverr}`);
+      await progress.info(`Searching for "${searchTerm}" at ${searchUrl}`);
 
-        if (!needsRecovery) {
-          throw error;
-        }
+      const { results, searchUrl: fetchedUrl } = await runSearch(
+        searchTerm,
+        storedWebsite,
+        (step) => progress.info(step),
+        { useFlareSolverr },
+      );
 
-        await progress.info('Page became unusable; restarting the browser and attempting one recovery before retrying search...');
-        await resetBrowser();
-        const { page: revivedPage, revived } = await ensureActivePage({ allowRestart: true });
-
-        if (!isPageUsable(revivedPage)) {
-          await progress.fail('The browser page is unavailable right after opening. Please run /go-to again.');
-          return;
-        }
-
-        openedPage = revivedPage;
-        await progress.success(revived ? 'Browser session revived. Retrying search...' : 'Using active page. Retrying search...');
-        results = await runSearch(openedPage, searchTerm, (step) => progress.info(step), baseSearchUrl);
-      }
-      await progress.success(`Search finished with ${results.length} result(s).`);
+      await progress.success(`Search finished via ${fetchedUrl} with ${results.length} result(s).`);
 
       const message = formatResults(results, searchTerm);
       await progress.complete(message);
     } catch (error) {
-      console.error('[go-to] Failed to open site', error);
+      console.error('[go-to] Failed to perform search', error);
       await progress.fail(`Could not complete the request: ${error.message}`);
     }
   },

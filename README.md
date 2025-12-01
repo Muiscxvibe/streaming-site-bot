@@ -2,10 +2,10 @@
 
 Discord bot that provides two admin-only slash commands:
 
-- `/website`: store a website URL for later browsing.
-- `/go-to`: open the stored website on the machine running the bot, with an option to disable headless mode (leaves the window open for you to close) or route through FlareSolverr while still launching the browser. Provide `type`/`name` (and `season`/`episode` for shows) to automatically jump—using the saved site URL as the base—to the site's search URL (e.g., `https://example.com/search/all/your-term/`) and list the five healthiest results ordered by health, quality, and sensible file size from the results table. There is no separate `/search` command—the search runs immediately as part of `/go-to` when you supply search inputs.
+- `/website`: store a website URL for later scraping.
+- `/go-to`: collect options (headless/use-flaresolverr/type/name/season/episode), build the search URL from the saved base (e.g., `https://example.com/search/all/your-term/`), fetch that page, and list the five healthiest results ordered by health, quality, and sensible file size from the results table. There is no separate `/search` command—the scraping runs immediately as part of `/go-to` when you supply search inputs.
 
-Each command streams progress updates back to Discord (and logs to the bot console) so you can see when URLs are validated, pages are opened, and searches complete. The browser launches with ad blocking enabled (via uBlock Origin's adblocker engine) to reduce distractions while browsing.
+Each command streams progress updates back to Discord (and logs to the bot console) so you can see when URLs are validated, search URLs are built, and scraping completes.
 
 ## Setup
 1. Install dependencies:

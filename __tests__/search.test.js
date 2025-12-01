@@ -1,4 +1,16 @@
-const { buildSearchTerm, buildSearchUrl, slugifySearchTerm } = require('../src/services/search');
+jest.mock('../src/services/flaresolverr', () => ({
+  fetchWithFallback: jest.fn(),
+  fetchPageWithFlareSolverr: jest.fn(),
+}));
+
+const { fetchWithFallback, fetchPageWithFlareSolverr } = require('../src/services/flaresolverr');
+const {
+  buildSearchTerm,
+  buildSearchUrl,
+  slugifySearchTerm,
+  runSearch,
+  extractRowsFromHtml,
+} = require('../src/services/search');
 
 describe('search helpers', () => {
   it('builds show search terms with zero padding', () => {
@@ -16,5 +28,55 @@ describe('search helpers', () => {
   it('constructs the site search URL', () => {
     const url = buildSearchUrl('https://www.limetorrents.fun', 'South Park s04e05');
     expect(url).toBe('https://www.limetorrents.fun/search/all/south-park-s04e05/');
+  });
+});
+
+describe('runSearch', () => {
+  const sampleHtml = `
+    <html>
+      <body>
+        <div>
+          <div></div><div></div><div></div><div></div><div></div>
+          <div>
+            <div>
+              <table></table>
+              <table>
+                <tbody>
+                  <tr><td>Show s01e01 1080p</td><td>1.2 GB</td><td>200</td></tr>
+                  <tr><td>Show s01e01 720p</td><td>900 MB</td><td>150</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fetchWithFallback.mockResolvedValue({ ok: true, text: () => Promise.resolve(sampleHtml) });
+    fetchPageWithFlareSolverr.mockResolvedValue({ html: sampleHtml, url: 'https://example.com/solved' });
+  });
+
+  it('extracts rows from the sample html', () => {
+    const rows = extractRowsFromHtml(sampleHtml);
+    expect(rows).toHaveLength(2);
+  });
+
+  it('fetches and parses results with a direct request', async () => {
+    const { results, searchUrl } = await runSearch('Show s01e01', 'https://example.com');
+
+    expect(searchUrl).toBe('https://example.com/search/all/show-s01e01/');
+    expect(fetchWithFallback).toHaveBeenCalled();
+    expect(results[0].name).toContain('1080p');
+  });
+
+  it('fetches via flaresolverr when requested', async () => {
+    const { results, searchUrl } = await runSearch('Show s01e01', 'https://example.com', () => {}, { useFlareSolverr: true });
+
+    expect(searchUrl).toBe('https://example.com/solved');
+    expect(fetchPageWithFlareSolverr).toHaveBeenCalled();
+    expect(results).toHaveLength(2);
   });
 });
