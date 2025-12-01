@@ -5,8 +5,14 @@ const { getWebsite } = require('../services/websiteStore');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('go-to')
-    .setDescription('Open the saved website in a headless browser')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    .setDescription('Open the saved website in a browser')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addBooleanOption((option) =>
+      option
+        .setName('headless')
+        .setDescription('Run the browser in headless mode (default: true)')
+        .setRequired(false),
+    ),
   async execute(interaction) {
     const storedWebsite = getWebsite();
 
@@ -18,10 +24,13 @@ module.exports = {
       return;
     }
 
+    const headless = interaction.options?.getBoolean('headless') ?? true;
+
     try {
-      const normalized = await openWebsite(storedWebsite);
+      const normalized = await openWebsite(storedWebsite, headless);
+      const modeLabel = headless ? 'in a headless browser' : 'with headless mode disabled';
       await interaction.reply({
-        content: `Opened ${normalized} in a headless browser.`,
+        content: `Opened ${normalized} ${modeLabel}.`,
         ephemeral: true,
       });
     } catch (error) {

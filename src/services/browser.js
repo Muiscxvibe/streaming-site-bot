@@ -13,9 +13,9 @@ function ensureUrl(target) {
   return parsed.toString();
 }
 
-async function openWebsite(target) {
+async function openWebsite(target, headless = true) {
   const url = ensureUrl(target);
-  const browser = await puppeteer.launch({ headless: true });
+  const browser = await puppeteer.launch({ headless });
   const page = await browser.newPage();
 
   try {

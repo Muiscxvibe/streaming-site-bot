@@ -20,13 +20,29 @@ describe('go-to command', () => {
   it('replies with success message after opening stored site', async () => {
     const reply = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
-    const interaction = { reply };
+    const options = { getBoolean: jest.fn().mockReturnValue(null) };
+    const interaction = { reply, options };
 
     await goToCommand.execute(interaction);
 
-    expect(openWebsite).toHaveBeenCalledWith('https://example.com/');
+    expect(openWebsite).toHaveBeenCalledWith('https://example.com/', true);
     expect(reply).toHaveBeenCalledWith({
       content: 'Opened https://example.com/ in a headless browser.',
+      ephemeral: true,
+    });
+  });
+
+  it('allows disabling headless mode', async () => {
+    const reply = jest.fn();
+    getWebsite.mockReturnValue('https://example.com/');
+    const options = { getBoolean: jest.fn().mockReturnValue(false) };
+    const interaction = { reply, options };
+
+    await goToCommand.execute(interaction);
+
+    expect(openWebsite).toHaveBeenCalledWith('https://example.com/', false);
+    expect(reply).toHaveBeenCalledWith({
+      content: 'Opened https://example.com/ with headless mode disabled.',
       ephemeral: true,
     });
   });

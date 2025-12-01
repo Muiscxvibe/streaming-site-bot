@@ -3,7 +3,7 @@
 Discord bot that provides two admin-only slash commands:
 
 - `/website`: store a website URL for later browsing.
-- `/go-to`: open the stored website on the machine running the bot (headless Chromium).
+- `/go-to`: open the stored website on the machine running the bot, with an option to disable headless mode.
 
 ## Setup
 1. Install dependencies:
