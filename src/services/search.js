@@ -235,7 +235,7 @@ async function runSearch(searchTerm, baseUrl, report = () => {}, { useFlareSolve
 
 function extractDownloadLink(html, detailUrl) {
   if (detailUrl) {
-    const normalized = detailUrl.toLowerCase();
+    const normalized = detailUrl.split(/[?#]/)[0].toLowerCase();
 
     if (detailUrl.startsWith('magnet:') || normalized.endsWith('.torrent')) {
       return detailUrl;

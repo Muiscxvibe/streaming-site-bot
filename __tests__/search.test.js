@@ -116,6 +116,13 @@ describe('runSearch', () => {
     expect(download).toBe(torrentUrl);
   });
 
+  it('returns detail url when it is a torrent link with query params', () => {
+    const torrentUrl = 'https://itorrents.net/file.torrent?title=South-Park';
+    const download = extractDownloadLink('', torrentUrl);
+
+    expect(download).toBe(torrentUrl);
+  });
+
   it('falls back to any torrent link when selectors miss', () => {
     const detailHtml = `
       <html>
