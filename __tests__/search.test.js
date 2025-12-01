@@ -87,4 +87,33 @@ describe('runSearch', () => {
     const download = extractDownloadLink(detailHtml, 'https://example.com/detail');
     expect(download).toBe('magnet:?xt=urn:btih:123');
   });
+
+  it('finds a magnet link that is not the first anchor', () => {
+    const detailHtml = `
+      <html>
+        <body>
+          <div><a href="/irrelevant">ignore me</a></div>
+          <div><a href="magnet:?xt=urn:btih:456">Magnet Download</a></div>
+        </body>
+      </html>
+    `;
+
+    const download = extractDownloadLink(detailHtml, 'https://example.com/detail');
+    expect(download).toBe('magnet:?xt=urn:btih:456');
+  });
+
+  it('falls back to any torrent link when selectors miss', () => {
+    const detailHtml = `
+      <html>
+        <body>
+          <div>
+            <a href="/downloads/file.torrent">Torrent Download</a>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const download = extractDownloadLink(detailHtml, 'https://example.com/detail');
+    expect(download).toBe('https://example.com/downloads/file.torrent');
+  });
 });

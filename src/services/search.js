@@ -236,20 +236,60 @@ async function runSearch(searchTerm, baseUrl, report = () => {}, { useFlareSolve
 function extractDownloadLink(html, detailUrl) {
   const $ = cheerio.load(html);
 
+  const resolveHref = (href) => {
+    if (!href) return null;
+    return href.startsWith('magnet:') || href.startsWith('http')
+      ? href
+      : new URL(href, detailUrl ? ensureUrl(detailUrl) : undefined).toString();
+  };
+
+  const candidates = [];
+
   for (const selector of DOWNLOAD_LINK_SELECTORS) {
-    const anchor = $(selector).first();
-    if (anchor.length) {
-      const href = anchor.attr('href');
-      if (href) {
-        const resolved = href.startsWith('magnet:') || href.startsWith('http')
-          ? href
-          : new URL(href, detailUrl ? ensureUrl(detailUrl) : undefined).toString();
-        return resolved;
-      }
-    }
+    const anchors = $(selector).toArray();
+    if (!anchors.length) continue;
+
+    anchors.forEach((node) => {
+      const anchor = $(node);
+      const resolved = resolveHref(anchor.attr('href'));
+      if (!resolved) return;
+
+      const text = anchor.text().toLowerCase();
+      const score = resolved.startsWith('magnet:')
+        ? 3
+        : resolved.endsWith('.torrent')
+          ? 2
+          : /magnet|torrent/.test(text)
+            ? 1
+            : 0;
+
+      candidates.push({ href: resolved, score });
+    });
   }
 
-  return null;
+  if (!candidates.length) {
+    $('a[href]').toArray().forEach((node) => {
+      const anchor = $(node);
+      const resolved = resolveHref(anchor.attr('href'));
+      if (!resolved) return;
+
+      const text = anchor.text().toLowerCase();
+      const score = resolved.startsWith('magnet:')
+        ? 3
+        : resolved.endsWith('.torrent')
+          ? 2
+          : /magnet|torrent/.test(text)
+            ? 1
+            : 0;
+
+      candidates.push({ href: resolved, score });
+    });
+  }
+
+  if (!candidates.length) return null;
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0].href;
 }
 
 module.exports = {
