@@ -38,7 +38,7 @@ describe('go-to command', () => {
 
     expect(openWebsite).toHaveBeenCalledWith('https://example.com/', true);
     expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
-    expect(editReply).toHaveBeenCalledWith('Opened https://example.com/ in a headless browser.');
+    expect(editReply).toHaveBeenCalledWith('Opened https://example.com/ in a headless browser');
   });
 
   it('allows disabling headless mode', async () => {
@@ -54,7 +54,9 @@ describe('go-to command', () => {
 
     expect(openWebsite).toHaveBeenCalledWith('https://example.com/', false);
     expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
-    expect(editReply).toHaveBeenCalledWith('Opened https://example.com/ with headless mode disabled.');
+    expect(editReply).toHaveBeenCalledWith(
+      'Opened https://example.com/ with headless mode disabled. The window will stay open until you close it.',
+    );
   });
 
   it('informs users when no site is saved', async () => {

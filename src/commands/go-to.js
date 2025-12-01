@@ -39,8 +39,10 @@ module.exports = {
         await interaction.editReply(`Opened ${url} via FlareSolverr (${endpoint}).`);
       } else {
         const normalized = await openWebsite(storedWebsite, headless);
-        const modeLabel = headless ? 'in a headless browser' : 'with headless mode disabled';
-        await interaction.editReply(`Opened ${normalized} ${modeLabel}.`);
+        const modeLabel = headless
+          ? 'in a headless browser'
+          : 'with headless mode disabled. The window will stay open until you close it.';
+        await interaction.editReply(`Opened ${normalized} ${modeLabel}`);
       }
     } catch (error) {
       await interaction.editReply(`Could not open that URL: ${error.message}`);

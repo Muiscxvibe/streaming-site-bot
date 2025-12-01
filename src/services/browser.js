@@ -20,7 +20,12 @@ async function openWebsite(target, headless = true) {
 
   try {
     await page.goto(url, GOTO_OPTIONS);
-  } finally {
+  } catch (error) {
+    await browser.close();
+    throw error;
+  }
+
+  if (headless) {
     await browser.close();
   }
 
