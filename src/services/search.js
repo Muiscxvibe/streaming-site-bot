@@ -1,4 +1,5 @@
-const FORM_XPATH = '/html/body/div[2]/div/div[2]/form';
+const { ensureUrl, GOTO_OPTIONS } = require('./browser');
+
 const RESULTS_TBODY_XPATH = '/html/body/div[1]/div[6]/div[1]/table[2]/tbody';
 
 const QUALITY_ORDER = ['2160p', '1440p', '1080p', '720p', '480p', '360p'];
@@ -19,6 +20,27 @@ function buildSearchTerm(type, name, season, episode) {
   }
 
   return name;
+}
+
+function slugifySearchTerm(term) {
+  return term
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function buildSearchUrl(baseUrl, searchTerm) {
+  if (!baseUrl) {
+    throw new Error('A base URL is required to build the search URL.');
+  }
+
+  const normalizedBase = new URL(ensureUrl(baseUrl));
+  const slug = slugifySearchTerm(searchTerm);
+  const searchPath = `/search/all/${slug}/`;
+
+  return new URL(searchPath, normalizedBase.origin).toString();
 }
 
 function formatResults(results, term) {
@@ -114,45 +136,22 @@ async function runSearch(page, searchTerm, report = () => {}) {
     throw new Error('Active browser page is unavailable. Run /go-to again to refresh it.');
   }
 
+  if (!searchTerm) {
+    throw new Error('A search term is required.');
+  }
+
   await report('Focusing active page');
   await page.bringToFront().catch(() => {});
 
-  await report('Locating search form');
-  const [formHandle] = await page.$x(FORM_XPATH);
-
-  if (!formHandle) {
-    throw new Error('Search form not found on the page. Run /go-to and try again.');
-  }
-
-  const textInput =
-    (await formHandle.$('input[type="text"]')) ||
-    (await formHandle.$('input[name]')) ||
-    (await formHandle.$('input'));
-
-  if (!textInput) {
-    throw new Error('Could not locate the search input inside the form.');
-  }
-
-  await report('Clearing and filling search field');
-  await textInput.click({ clickCount: 3 }).catch(() => {});
-  await textInput.evaluate((el) => {
-    el.value = '';
-  });
-  await textInput.type(searchTerm);
-
-  const submitButton = (await formHandle.$('button[type="submit"]')) || (await formHandle.$('input[type="submit"]'));
-
-  if (submitButton) {
-    await report('Submitting form via button');
-    await submitButton.click();
-  } else {
-    await report('Submitting form via Enter key');
-    await textInput.press('Enter');
-  }
+  await report('Navigating directly to the search URL');
+  const searchUrl = buildSearchUrl(page.url(), searchTerm);
+  await page.goto(searchUrl, GOTO_OPTIONS);
 
   await report('Waiting for results table');
   const resultsBody = await page.waitForXPath(RESULTS_TBODY_XPATH, { timeout: 20000 });
   const rows = await resultsBody.$x('./tr');
+
+  await report(`Found ${rows.length} row(s) in the results table`);
 
   const rawRows = await Promise.all(
     rows.map(async (row) => ({
@@ -169,11 +168,12 @@ async function runSearch(page, searchTerm, report = () => {}) {
 }
 
 module.exports = {
-  FORM_XPATH,
   RESULTS_TBODY_XPATH,
   buildSearchTerm,
+  buildSearchUrl,
   formatResults,
   runSearch,
   normalizeResults,
   sortResults,
+  slugifySearchTerm,
 };

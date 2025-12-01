@@ -1,4 +1,11 @@
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const AdblockerPlugin = require('puppeteer-extra-plugin-adblocker');
+
+puppeteer.use(
+  AdblockerPlugin({
+    blockTrackers: true,
+  }),
+);
 
 const GOTO_OPTIONS = { waitUntil: 'networkidle2', timeout: 30000 };
 

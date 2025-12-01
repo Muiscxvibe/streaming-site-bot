@@ -1,7 +1,10 @@
-jest.mock('puppeteer', () => {
+jest.mock('puppeteer-extra-plugin-adblocker', () => () => () => ({}));
+
+jest.mock('puppeteer-extra', () => {
   const goto = jest.fn();
   const page = {
     goto,
+    url: jest.fn().mockReturnValue('https://example.com/'),
     isClosed: jest.fn().mockReturnValue(false),
     close: jest.fn(),
     $x: jest.fn(),
@@ -14,6 +17,7 @@ jest.mock('puppeteer', () => {
   const browser = { newPage, close, pages, process };
 
   return {
+    use: jest.fn(),
     launch: jest.fn().mockResolvedValue(browser),
     __mockBrowser: browser,
     __mockGoto: goto,
@@ -21,7 +25,7 @@ jest.mock('puppeteer', () => {
   };
 });
 
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
 const { ensureUrl, openWebsite, GOTO_OPTIONS, ensureActivePage } = require('../src/services/browser');
 
 beforeEach(() => {
