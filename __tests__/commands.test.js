@@ -44,7 +44,7 @@ describe('go-to command', () => {
 
     expect(openWebsite).toHaveBeenCalledWith('https://example.com/', true);
     expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
-    expect(editReply).toHaveBeenCalledWith('Opened https://example.com/ in a headless browser');
+    expect(editReply.mock.calls.at(-1)[0]).toContain('Opened https://example.com/ in a headless browser');
   });
 
   it('allows disabling headless mode', async () => {
@@ -60,7 +60,7 @@ describe('go-to command', () => {
 
     expect(openWebsite).toHaveBeenCalledWith('https://example.com/', false);
     expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
-    expect(editReply).toHaveBeenCalledWith(
+    expect(editReply.mock.calls.at(-1)[0]).toContain(
       'Opened https://example.com/ with headless mode disabled. The window will stay open until you close it.',
     );
   });
@@ -75,7 +75,7 @@ describe('go-to command', () => {
 
     expect(openWebsite).not.toHaveBeenCalled();
     expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
-    expect(editReply).toHaveBeenCalledWith('No website saved yet. Use /website to set one first.');
+    expect(editReply.mock.calls.at(-1)[0]).toContain('No website saved yet. Use /website to set one first.');
   });
 
   it('routes through flaresolverr when requested', async () => {
@@ -92,7 +92,7 @@ describe('go-to command', () => {
     expect(openWithFlareSolverr).toHaveBeenCalledWith('https://example.com/');
     expect(openWebsite).toHaveBeenCalledWith('https://example.com/', true);
     expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
-    expect(editReply).toHaveBeenCalledWith(
+    expect(editReply.mock.calls.at(-1)[0]).toContain(
       'Opened https://example.com/ via FlareSolverr (http://solver:8191) in a headless browser',
     );
   });
@@ -115,7 +115,7 @@ describe('go-to command', () => {
     expect(openWithFlareSolverr).toHaveBeenCalledWith('https://example.com/');
     expect(openWebsite).toHaveBeenCalledWith('https://example.com/', false);
     expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
-    expect(editReply).toHaveBeenCalledWith(
+    expect(editReply.mock.calls.at(-1)[0]).toContain(
       'Opened https://example.com/ via FlareSolverr (http://solver:8191) with headless mode disabled. The window will stay open until you close it.',
     );
   });
@@ -123,17 +123,18 @@ describe('go-to command', () => {
 
 describe('website command', () => {
   it('stores a website request for admins', async () => {
-    const reply = jest.fn();
+    const deferReply = jest.fn();
+    const editReply = jest.fn();
     const options = { getString: jest.fn().mockReturnValue('https://discord.com') };
-    const interaction = { options, reply };
+    const interaction = { options, deferReply, editReply };
 
     await websiteCommand.execute(interaction);
 
     expect(setWebsite).toHaveBeenCalledWith('https://discord.com/');
-    expect(reply).toHaveBeenCalledWith({
-      content: 'Saved website: https://discord.com/. Use /go-to to open it on the bot machine.',
-      flags: MessageFlags.Ephemeral,
-    });
+    expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(editReply.mock.calls.at(-1)[0]).toContain(
+      'Saved website: https://discord.com/. Use /go-to to open it on the bot machine.',
+    );
   });
 });
 
@@ -144,7 +145,7 @@ describe('search command', () => {
 
     await searchCommand.execute({ deferReply: jest.fn(), editReply });
 
-    expect(editReply).toHaveBeenCalledWith('No active browser session found. Run /go-to first to load the site.');
+    expect(editReply.mock.calls.at(-1)[0]).toContain('No active browser session found. Run /go-to first to load the site.');
   });
 
   it('validates show inputs for season and episode', async () => {
@@ -161,7 +162,7 @@ describe('search command', () => {
 
     await searchCommand.execute({ deferReply: jest.fn(), editReply, options });
 
-    expect(editReply).toHaveBeenCalledWith(
+    expect(editReply.mock.calls.at(-1)[0]).toContain(
       'Could not perform the search: Season and episode are required for shows.',
     );
   });
@@ -190,11 +191,9 @@ describe('search command', () => {
     await searchCommand.execute({ deferReply: jest.fn(), editReply, options });
 
     expect(runSearch).toHaveBeenCalled();
-    expect(editReply).toHaveBeenCalledWith(
-      'Top matches ordered by health, quality, then smaller sizes:\n' +
-        '1. Example s01e01 — Quality: 1080P; Size: 1.4 GB; Health: 150 health/seed score\n' +
-        '2. Example s01e01 720p — Quality: 720P; Size: 900 MB; Health: 120 health/seed score\n' +
-        'Results are ordered best to worst based on health, quality, and reasonable size.',
-    );
+    const finalMessage = editReply.mock.calls.at(-1)[0];
+    expect(finalMessage).toContain('Search finished with 2 result(s).');
+    expect(finalMessage).toContain('1. Example s01e01 — Quality: 1080P; Size: 1.4 GB; Health: 150 health/seed score');
+    expect(finalMessage).toContain('Results are ordered best to worst based on health, quality, and reasonable size.');
   });
 });

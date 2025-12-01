@@ -2,6 +2,7 @@ const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('disc
 const { openWebsite } = require('../services/browser');
 const { openWithFlareSolverr } = require('../services/flaresolverr');
 const { getWebsite } = require('../services/websiteStore');
+const { createProgressTracker } = require('../services/progress');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -23,12 +24,17 @@ module.exports = {
   async execute(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
+    const progress = createProgressTracker({ interaction, scope: 'go-to' });
+    await progress.info('Preparing to open the saved website...');
+
     const storedWebsite = getWebsite();
 
     if (!storedWebsite) {
-      await interaction.editReply('No website saved yet. Use /website to set one first.');
+      await progress.fail('No website saved yet. Use /website to set one first.');
       return;
     }
+
+    await progress.success(`Saved website found: ${storedWebsite}`);
 
     const useFlareSolverr = interaction.options?.getBoolean('use-flaresolverr') ?? false;
     const headless = interaction.options?.getBoolean('headless') ?? true;
@@ -38,15 +44,21 @@ module.exports = {
 
     try {
       if (useFlareSolverr) {
+        await progress.info('Requesting FlareSolverr to bypass verification...');
         const { url, endpoint } = await openWithFlareSolverr(storedWebsite);
+        await progress.success(`FlareSolverr resolved the page via ${endpoint}`);
+
+        await progress.info('Opening resolved page in browser...');
         const normalized = await openWebsite(url, headless);
-        await interaction.editReply(`Opened ${normalized} via FlareSolverr (${endpoint}) ${modeLabel}`);
+        await progress.complete(`Opened ${normalized} via FlareSolverr (${endpoint}) ${modeLabel}`);
       } else {
+        await progress.info('Opening saved page in browser...');
         const normalized = await openWebsite(storedWebsite, headless);
-        await interaction.editReply(`Opened ${normalized} ${modeLabel}`);
+        await progress.complete(`Opened ${normalized} ${modeLabel}`);
       }
     } catch (error) {
-      await interaction.editReply(`Could not open that URL: ${error.message}`);
+      console.error('[go-to] Failed to open site', error);
+      await progress.fail(`Could not open that URL: ${error.message}`);
     }
   },
 };

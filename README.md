@@ -6,6 +6,8 @@ Discord bot that provides three admin-only slash commands:
 - `/go-to`: open the stored website on the machine running the bot, with an option to disable headless mode (leaves the window open for you to close) or route through FlareSolverr while still launching the browser.
 - `/search`: after `/go-to` loads the target site, fill in the search form, submit it, and list the five healthiest results ordered by health, quality, and sensible file size (for shows, pass season and episode to build `sXXeYY`).
 
+Each command streams progress updates back to Discord (and logs to the bot console) so you can see when URLs are validated, pages are opened, and searches complete.
+
 ## Setup
 1. Install dependencies:
    ```bash

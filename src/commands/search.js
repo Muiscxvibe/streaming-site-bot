@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const { getActivePage } = require('../services/browser');
 const { runSearch } = require('../services/search');
+const { createProgressTracker } = require('../services/progress');
 
 function buildSearchTerm(type, name, season, episode) {
   if (type === 'show') {
@@ -58,12 +59,17 @@ module.exports = {
   async execute(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
+    const progress = createProgressTracker({ interaction, scope: 'search' });
+    await progress.info('Starting search flow...');
+
     const page = getActivePage();
 
     if (!page) {
-      await interaction.editReply('No active browser session found. Run /go-to first to load the site.');
+      await progress.fail('No active browser session found. Run /go-to first to load the site.');
       return;
     }
+
+    await progress.success('Browser session ready.');
 
     const type = interaction.options?.getString('type');
     const name = interaction.options?.getString('name');
@@ -72,11 +78,15 @@ module.exports = {
 
     try {
       const searchTerm = buildSearchTerm(type, name, season, episode);
-      const results = await runSearch(page, searchTerm);
+      await progress.info(`Searching for "${searchTerm}"...`);
+      const results = await runSearch(page, searchTerm, (step) => progress.info(step));
+      await progress.success(`Search finished with ${results.length} result(s).`);
+
       const message = formatResults(results, searchTerm);
-      await interaction.editReply(message);
+      await progress.complete(message);
     } catch (error) {
-      await interaction.editReply(`Could not perform the search: ${error.message}`);
+      console.error('[search] Could not perform the search', error);
+      await progress.fail(`Could not perform the search: ${error.message}`);
     }
   },
 };

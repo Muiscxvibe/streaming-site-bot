@@ -71,8 +71,15 @@ function sortResults(results) {
     .filter((result) => result.name);
 }
 
-async function runSearch(page, searchTerm) {
+async function runSearch(page, searchTerm, report = () => {}) {
+  if (!page || typeof page.$x !== 'function') {
+    throw new Error('Active browser page is unavailable. Run /go-to again to refresh it.');
+  }
+
+  await report('Focusing active page');
   await page.bringToFront().catch(() => {});
+
+  await report('Locating search form');
   const [formHandle] = await page.$x(FORM_XPATH);
 
   if (!formHandle) {
@@ -88,6 +95,7 @@ async function runSearch(page, searchTerm) {
     throw new Error('Could not locate the search input inside the form.');
   }
 
+  await report('Clearing and filling search field');
   await textInput.click({ clickCount: 3 }).catch(() => {});
   await textInput.evaluate((el) => {
     el.value = '';
@@ -97,11 +105,14 @@ async function runSearch(page, searchTerm) {
   const submitButton = (await formHandle.$('button[type="submit"]')) || (await formHandle.$('input[type="submit"]'));
 
   if (submitButton) {
+    await report('Submitting form via button');
     await submitButton.click();
   } else {
+    await report('Submitting form via Enter key');
     await textInput.press('Enter');
   }
 
+  await report('Waiting for results table');
   const resultsBody = await page.waitForXPath(RESULTS_TBODY_XPATH, { timeout: 20000 });
   const rows = await resultsBody.$x('./tr');
 
@@ -112,6 +123,7 @@ async function runSearch(page, searchTerm) {
     })),
   );
 
+  await report('Normalizing and ranking results');
   const normalized = normalizeResults(rawRows);
   const sorted = sortResults(normalized).slice(0, 5);
 
