@@ -15,6 +15,10 @@ if (!token || !clientId || !guildId) {
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 client.commands = new Collection();
+const { getResult, clearToken } = require('./services/resultStore');
+const { createProgressTracker } = require('./services/progress');
+const { fetchDetailPage, extractDownloadLink } = require('./services/search');
+const { addTorrent, isConfigured } = require('./services/qbittorrent');
 
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith('.js'));
@@ -67,6 +71,60 @@ client.once(Events.ClientReady, async (readyClient) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  if (interaction.isButton()) {
+    if (!interaction.customId.startsWith('download:')) return;
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const progress = createProgressTracker({ interaction, scope: 'download' });
+
+    try {
+      const [, token, indexString] = interaction.customId.split(':');
+      const index = Number.parseInt(indexString, 10);
+      const stored = getResult(token, index);
+
+      if (!stored) {
+        await progress.fail('This download button has expired. Please run /go-to again.');
+        return;
+      }
+
+      const { result, options } = stored;
+
+      if (!isConfigured()) {
+        await progress.fail('qBittorrent is not configured. Use /qbittorrent first.');
+        return;
+      }
+
+      if (!result.detailUrl) {
+        await progress.fail('No detail link was found for this result.');
+        return;
+      }
+
+      await progress.info(`Opening detail page for "${result.name}"...`);
+      const { html, url } = await fetchDetailPage(result.detailUrl, { useFlareSolverr: options.useFlareSolverr });
+      await progress.success(`Fetched detail page from ${url}`);
+
+      await progress.info('Locating download link...');
+      const downloadUrl = extractDownloadLink(html, url);
+
+      if (!downloadUrl) {
+        await progress.fail('No magnet or torrent link was found on the detail page.');
+        return;
+      }
+
+      await progress.info('Sending to qBittorrent...');
+      await addTorrent(downloadUrl);
+      await progress.success('qBittorrent accepted the download.');
+      await progress.complete(`🚀 Now downloading: ${result.name}`);
+
+      clearToken(token);
+    } catch (error) {
+      console.error('[download] Failed to trigger download', error);
+      await progress.fail(`Could not start download: ${error.message}`);
+    }
+
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) return;
 
   const command = interaction.client.commands.get(interaction.commandName);

@@ -10,6 +10,7 @@ const {
   slugifySearchTerm,
   runSearch,
   extractRowsFromHtml,
+  extractDownloadLink,
 } = require('../src/services/search');
 
 describe('search helpers', () => {
@@ -60,8 +61,9 @@ describe('runSearch', () => {
   });
 
   it('extracts rows from the sample html', () => {
-    const rows = extractRowsFromHtml(sampleHtml);
+    const rows = extractRowsFromHtml(sampleHtml, 'https://example.com');
     expect(rows).toHaveLength(2);
+    expect(rows[0].detailUrl).toBeNull();
   });
 
   it('fetches and parses results with a direct request', async () => {
@@ -78,5 +80,11 @@ describe('runSearch', () => {
     expect(searchUrl).toBe('https://example.com/solved');
     expect(fetchPageWithFlareSolverr).toHaveBeenCalled();
     expect(results).toHaveLength(2);
+  });
+
+  it('extracts a magnet from detail html when present', () => {
+    const detailHtml = '<html><body><a href="magnet:?xt=urn:btih:123">magnet</a></body></html>';
+    const download = extractDownloadLink(detailHtml, 'https://example.com/detail');
+    expect(download).toBe('magnet:?xt=urn:btih:123');
   });
 });

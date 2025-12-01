@@ -1,7 +1,9 @@
-const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { getWebsite } = require('../services/websiteStore');
 const { createProgressTracker } = require('../services/progress');
-const { buildSearchTerm, formatResults, runSearch, buildSearchUrl } = require('../services/search');
+const { buildSearchTerm, formatResults, runSearch } = require('../services/search');
+const { saveResults } = require('../services/resultStore');
+const { isConfigured } = require('../services/qbittorrent');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -60,10 +62,8 @@ module.exports = {
 
     try {
       const searchTerm = buildSearchTerm(searchType, searchName, season, episode);
-      const searchUrl = buildSearchUrl(storedWebsite, searchTerm);
-
       await progress.info(`Using options — headless: ${headless}, flaresolverr: ${useFlareSolverr}`);
-      await progress.info(`Searching for "${searchTerm}" at ${searchUrl}`);
+      await progress.info(`Searching for "${searchTerm}" at the saved site`);
 
       const { results, searchUrl: fetchedUrl } = await runSearch(
         searchTerm,
@@ -75,7 +75,30 @@ module.exports = {
       await progress.success(`Search finished via ${fetchedUrl} with ${results.length} result(s).`);
 
       const message = formatResults(results, searchTerm);
-      await progress.complete(message);
+      const content = await progress.complete(message);
+
+      if (!results.length) {
+        return;
+      }
+
+      const token = saveResults(results, { useFlareSolverr, baseUrl: storedWebsite });
+      const buttons = results.map((result, index) =>
+        new ButtonBuilder()
+          .setCustomId(`download:${token}:${index}`)
+          .setLabel(`Download #${index + 1}`)
+          .setStyle(ButtonStyle.Primary),
+      );
+
+      const rows = [];
+      for (let i = 0; i < buttons.length; i += 5) {
+        rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
+      }
+
+      const qbNote = isConfigured()
+        ? ''
+        : '\n⚠️ qBittorrent is not configured yet. Use /qbittorrent before pressing download buttons.';
+
+      await interaction.editReply({ content: `${content}${qbNote}`, components: rows });
     } catch (error) {
       console.error('[go-to] Failed to perform search', error);
       await progress.fail(`Could not complete the request: ${error.message}`);

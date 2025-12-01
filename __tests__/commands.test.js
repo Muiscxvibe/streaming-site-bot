@@ -9,11 +9,21 @@ jest.mock('../src/services/search', () => {
     runSearch: jest.fn(),
   };
 });
+jest.mock('../src/services/resultStore', () => ({
+  saveResults: jest.fn(),
+}));
+jest.mock('../src/services/qbittorrent', () => ({
+  isConfigured: jest.fn(),
+  setQbittorrentConfig: jest.fn(),
+}));
 
 const { setWebsite, getWebsite } = require('../src/services/websiteStore');
 const { runSearch } = require('../src/services/search');
+const { saveResults } = require('../src/services/resultStore');
+const { isConfigured } = require('../src/services/qbittorrent');
 const goToCommand = require('../src/commands/go-to');
 const websiteCommand = require('../src/commands/website');
+const qbittorrentCommand = require('../src/commands/qbittorrent');
 const { MessageFlags } = require('discord.js');
 
 beforeEach(() => {
@@ -25,11 +35,25 @@ describe('go-to command', () => {
     const deferReply = jest.fn();
     const editReply = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
+    saveResults.mockReturnValue('token-123');
+    isConfigured.mockReturnValue(true);
 
     runSearch.mockResolvedValue({
       results: [
-        { name: 'Example s01e01', quality: '1080p', sizeText: '1.4 GB', health: 150 },
-        { name: 'Example s01e01 720p', quality: '720p', sizeText: '900 MB', health: 120 },
+        {
+          name: 'Example s01e01',
+          quality: '1080p',
+          sizeText: '1.4 GB',
+          health: 150,
+          detailUrl: 'https://example.com/example.torrent',
+        },
+        {
+          name: 'Example s01e01 720p',
+          quality: '720p',
+          sizeText: '900 MB',
+          health: 120,
+          detailUrl: 'https://example.com/example2.torrent',
+        },
       ],
       searchUrl: 'https://example.com/search/all/example-s01e01/',
     });
@@ -61,14 +85,18 @@ describe('go-to command', () => {
       { useFlareSolverr: false },
     );
     const finalMessage = editReply.mock.calls.at(-1)[0];
-    expect(finalMessage).toContain('Top matches ordered by health, quality, then smaller sizes:');
-    expect(finalMessage).toContain('Example s01e01');
+    expect(finalMessage.content).toContain('Top matches ordered by health, quality, then smaller sizes:');
+    expect(finalMessage.content).toContain('Example s01e01');
+    expect(finalMessage.components[0].components).toHaveLength(2);
+    expect(saveResults).toHaveBeenCalled();
   });
 
   it('passes the flaresolverr option through to the search service', async () => {
     const deferReply = jest.fn();
     const editReply = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
+    saveResults.mockReturnValue('token-123');
+    isConfigured.mockReturnValue(false);
 
     runSearch.mockResolvedValue({ results: [], searchUrl: 'https://example.com/search/all/example/' });
 
@@ -152,5 +180,25 @@ describe('website command', () => {
     expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
     const finalMessage = editReply.mock.calls.at(-1)[0];
     expect(finalMessage).toContain('Saved website: https://example.com/. Use /go-to to open it on the bot machine.');
+  });
+});
+
+describe('qbittorrent command', () => {
+  it('saves configuration and reports success', async () => {
+    const deferReply = jest.fn();
+    const editReply = jest.fn();
+    const options = {
+      getString: jest.fn((name) => {
+        if (name === 'host') return 'http://localhost:8080';
+        if (name === 'username') return 'admin';
+        if (name === 'password') return 'secret';
+        return null;
+      }),
+    };
+
+    await qbittorrentCommand.execute({ deferReply, editReply, options });
+
+    expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(editReply.mock.calls.at(-1)[0]).toContain('qBittorrent connection saved');
   });
 });

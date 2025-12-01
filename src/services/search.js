@@ -10,10 +10,34 @@ const RESULT_ROW_SELECTORS = [
   'table tr',
 ];
 
+const DOWNLOAD_LINK_SELECTORS = [
+  'body > div:nth-of-type(1) > div:nth-of-type(6) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div > div:nth-of-type(4) a',
+  'div:nth-of-type(6) div:nth-of-type(1) div:nth-of-type(1) div:nth-of-type(1) div:nth-of-type(1) div div:nth-of-type(4) a',
+  'a[href^="magnet:"]',
+  'a[href$=".torrent"]',
+];
+
 const QUALITY_ORDER = ['2160p', '1440p', '1080p', '720p', '480p', '360p'];
 
 async function fetchPageHtml(targetUrl) {
   const url = ensureUrl(targetUrl);
+  const response = await fetchWithFallback(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${url}: ${response.status}`);
+  }
+
+  const html = await response.text();
+  return { html, url };
+}
+
+async function fetchDetailPage(targetUrl, { useFlareSolverr = false } = {}) {
+  const url = ensureUrl(targetUrl);
+
+  if (useFlareSolverr) {
+    return fetchPageWithFlareSolverr(url);
+  }
+
   const response = await fetchWithFallback(url);
 
   if (!response.ok) {
@@ -133,6 +157,7 @@ function normalizeResults(rawRows) {
       sizeMb,
       health,
       cells,
+      detailUrl: row.detailUrl,
     };
   });
 }
@@ -151,7 +176,7 @@ function sortResults(results) {
     .filter((result) => result.name);
 }
 
-function extractRowsFromHtml(html) {
+function extractRowsFromHtml(html, baseUrl) {
   const $ = cheerio.load(html);
 
   for (const selector of RESULT_ROW_SELECTORS) {
@@ -165,8 +190,13 @@ function extractRowsFromHtml(html) {
           .map((cell) => $(cell).text().trim())
           .filter(Boolean);
 
+        const linkHref = $(row).find('a[href]').attr('href');
+        const detailUrl = linkHref
+          ? new URL(linkHref, baseUrl ? ensureUrl(baseUrl) : undefined).toString()
+          : null;
+
         const text = cells.join(' ').trim() || $(row).text().trim();
-        return { cells, text };
+        return { cells, text, detailUrl };
       });
     }
   }
@@ -193,7 +223,7 @@ async function runSearch(searchTerm, baseUrl, report = () => {}, { useFlareSolve
   await report(`Fetched search page from ${fetchedUrl}`);
   await report('Parsing results table');
 
-  const rawRows = extractRowsFromHtml(html);
+  const rawRows = extractRowsFromHtml(html, baseUrl);
 
   await report(`Found ${rawRows.length} row(s) in the results table`);
   await report('Normalizing and ranking results');
@@ -201,6 +231,25 @@ async function runSearch(searchTerm, baseUrl, report = () => {}, { useFlareSolve
   const results = sortResults(normalized).slice(0, 5);
 
   return { results, searchUrl: fetchedUrl };
+}
+
+function extractDownloadLink(html, detailUrl) {
+  const $ = cheerio.load(html);
+
+  for (const selector of DOWNLOAD_LINK_SELECTORS) {
+    const anchor = $(selector).first();
+    if (anchor.length) {
+      const href = anchor.attr('href');
+      if (href) {
+        const resolved = href.startsWith('magnet:') || href.startsWith('http')
+          ? href
+          : new URL(href, detailUrl ? ensureUrl(detailUrl) : undefined).toString();
+        return resolved;
+      }
+    }
+  }
+
+  return null;
 }
 
 module.exports = {
@@ -213,4 +262,6 @@ module.exports = {
   sortResults,
   slugifySearchTerm,
   extractRowsFromHtml,
+  extractDownloadLink,
+  fetchDetailPage,
 };
