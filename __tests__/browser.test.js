@@ -1,18 +1,22 @@
 jest.mock('puppeteer', () => {
   const goto = jest.fn();
-  const newPage = jest.fn().mockResolvedValue({ goto });
+  const page = { goto, isClosed: jest.fn().mockReturnValue(false), close: jest.fn() };
+  const newPage = jest.fn().mockResolvedValue(page);
   const close = jest.fn();
-  const browser = { newPage, close };
+  const pages = jest.fn().mockResolvedValue([page]);
+  const process = jest.fn(() => ({ killed: false }));
+  const browser = { newPage, close, pages, process };
 
   return {
     launch: jest.fn().mockResolvedValue(browser),
     __mockBrowser: browser,
     __mockGoto: goto,
+    __mockPage: page,
   };
 });
 
 const puppeteer = require('puppeteer');
-const { ensureUrl, openWebsite, GOTO_OPTIONS } = require('../src/services/browser');
+const { ensureUrl, openWebsite, GOTO_OPTIONS, ensureActivePage } = require('../src/services/browser');
 
 describe('ensureUrl', () => {
   it('adds https when protocol missing', () => {
@@ -37,5 +41,16 @@ describe('openWebsite', () => {
     expect(puppeteer.__mockBrowser.newPage).toHaveBeenCalled();
     expect(puppeteer.__mockGoto).toHaveBeenCalledWith('https://example.com/', GOTO_OPTIONS);
     expect(puppeteer.__mockBrowser.close).not.toHaveBeenCalled();
+  });
+});
+
+describe('ensureActivePage', () => {
+  it('returns an existing page if one is open', async () => {
+    await openWebsite('example.com');
+
+    const { page, revived } = await ensureActivePage();
+
+    expect(page).toBe(puppeteer.__mockPage);
+    expect(revived).toBe(false);
   });
 });

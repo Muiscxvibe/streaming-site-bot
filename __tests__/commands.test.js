@@ -1,7 +1,7 @@
 jest.mock('../src/services/browser', () => ({
   openWebsite: jest.fn().mockResolvedValue('https://example.com/'),
   ensureUrl: jest.fn((url) => `${url}/`),
-  getActivePage: jest.fn(),
+  ensureActivePage: jest.fn(),
 }));
 jest.mock('../src/services/websiteStore', () => ({
   setWebsite: jest.fn(),
@@ -17,7 +17,7 @@ jest.mock('../src/services/search', () => ({
   runSearch: jest.fn(),
 }));
 
-const { openWebsite, getActivePage } = require('../src/services/browser');
+const { openWebsite, ensureActivePage } = require('../src/services/browser');
 const { setWebsite, getWebsite } = require('../src/services/websiteStore');
 const { openWithFlareSolverr } = require('../src/services/flaresolverr');
 const { runSearch } = require('../src/services/search');
@@ -141,7 +141,7 @@ describe('website command', () => {
 describe('search command', () => {
   it('requires an active browser session', async () => {
     const editReply = jest.fn();
-    getActivePage.mockReturnValue(null);
+    ensureActivePage.mockResolvedValue({ page: null, revived: false });
 
     await searchCommand.execute({ deferReply: jest.fn(), editReply });
 
@@ -150,7 +150,7 @@ describe('search command', () => {
 
   it('validates show inputs for season and episode', async () => {
     const editReply = jest.fn();
-    getActivePage.mockReturnValue({});
+    ensureActivePage.mockResolvedValue({ page: {}, revived: false });
     const options = {
       getString: jest.fn((name) => {
         if (name === 'type') return 'show';
@@ -169,7 +169,7 @@ describe('search command', () => {
 
   it('formats top results returned by the search service', async () => {
     const editReply = jest.fn();
-    getActivePage.mockReturnValue({});
+    ensureActivePage.mockResolvedValue({ page: {}, revived: false });
     runSearch.mockResolvedValue([
       { name: 'Example s01e01', quality: '1080p', sizeText: '1.4 GB', health: 150 },
       { name: 'Example s01e01 720p', quality: '720p', sizeText: '900 MB', health: 120 },

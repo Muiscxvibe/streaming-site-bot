@@ -16,6 +16,7 @@ function ensureUrl(target) {
 let browserInstance = null;
 let currentPage = null;
 let currentHeadless = true;
+let lastOpenedUrl = null;
 
 async function ensureBrowser(headless = true) {
   const isRunning = browserInstance && browserInstance.process() && !browserInstance.process().killed;
@@ -42,6 +43,7 @@ async function openWebsite(target, headless = true) {
   }
 
   currentPage = await browser.newPage();
+  lastOpenedUrl = url;
 
   try {
     await currentPage.goto(url, GOTO_OPTIONS);
@@ -56,10 +58,50 @@ async function openWebsite(target, headless = true) {
 }
 
 function getActivePage() {
-  if (currentPage && !currentPage.isClosed()) {
+  if (currentPage && typeof currentPage.isClosed === 'function' && !currentPage.isClosed()) {
     return currentPage;
   }
+
+  if (currentPage && typeof currentPage.isClosed !== 'function') {
+    return currentPage;
+  }
+
   return null;
+}
+
+async function ensureActivePage() {
+  const active = getActivePage();
+  if (active) {
+    return { page: active, revived: false };
+  }
+
+  if (browserInstance && browserInstance.process && !browserInstance.process().killed) {
+    try {
+      const pages = await browserInstance.pages();
+      const firstOpenPage = pages.find((page) => {
+        if (typeof page.isClosed !== 'function') return true;
+        return !page.isClosed();
+      });
+
+      if (firstOpenPage) {
+        currentPage = firstOpenPage;
+        return { page: currentPage, revived: true };
+      }
+    } catch (error) {
+      console.warn('[browser] Failed to inspect existing pages', error);
+    }
+  }
+
+  if (lastOpenedUrl) {
+    try {
+      await openWebsite(lastOpenedUrl, currentHeadless);
+      return { page: currentPage, revived: true };
+    } catch (error) {
+      console.warn('[browser] Failed to reopen last page', error);
+    }
+  }
+
+  return { page: null, revived: false };
 }
 
 module.exports = {
@@ -67,4 +109,5 @@ module.exports = {
   openWebsite,
   GOTO_OPTIONS,
   getActivePage,
+  ensureActivePage,
 };

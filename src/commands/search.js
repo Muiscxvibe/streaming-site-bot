@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { getActivePage } = require('../services/browser');
+const { ensureActivePage } = require('../services/browser');
 const { runSearch } = require('../services/search');
 const { createProgressTracker } = require('../services/progress');
 
@@ -62,11 +62,15 @@ module.exports = {
     const progress = createProgressTracker({ interaction, scope: 'search' });
     await progress.info('Starting search flow...');
 
-    const page = getActivePage();
+    const { page, revived } = await ensureActivePage();
 
     if (!page) {
       await progress.fail('No active browser session found. Run /go-to first to load the site.');
       return;
+    }
+
+    if (revived) {
+      await progress.info('Recovered the active browser page.');
     }
 
     await progress.success('Browser session ready.');
