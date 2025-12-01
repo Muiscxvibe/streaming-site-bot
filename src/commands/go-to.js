@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { openWebsite, ensureActivePage, isPageUsable } = require('../services/browser');
+const { openWebsite, isPageUsable } = require('../services/browser');
 const { openWithFlareSolverr } = require('../services/flaresolverr');
 const { getWebsite } = require('../services/websiteStore');
 const { createProgressTracker } = require('../services/progress');
@@ -74,49 +74,33 @@ module.exports = {
         await progress.info('Opening resolved page in browser...');
         const { url: normalized, page } = await openWebsite(url, headless);
         openedPage = page;
-        await progress.complete(`Opened ${normalized} via FlareSolverr (${endpoint}) ${modeLabel}`);
+        await progress.success(`Opened ${normalized} via FlareSolverr (${endpoint}) ${modeLabel}`);
       } else {
         await progress.info('Opening saved page in browser...');
         const { url: normalized, page } = await openWebsite(storedWebsite, headless);
         openedPage = page;
-        await progress.complete(`Opened ${normalized} ${modeLabel}`);
+        await progress.success(`Opened ${normalized} ${modeLabel}`);
       }
 
       const wantsSearch = Boolean(searchType || searchName || season != null || episode != null);
 
       if (!wantsSearch) {
+        await progress.complete('Opened the saved site. Provide type/name (and season/episode for shows) to trigger an on-page search.');
         return;
       }
 
       await progress.info('Preparing to search the opened site...');
 
-      let searchPage = openedPage;
-      let revived = false;
-
-      if (!isPageUsable(searchPage)) {
-        const revivedResult = await ensureActivePage();
-        searchPage = revivedResult.page;
-        revived = revivedResult.revived;
-      }
-
-      if (!isPageUsable(searchPage)) {
-        await progress.fail('No active browser session found. Run /go-to again to load the site.');
+      if (!isPageUsable(openedPage)) {
+        await progress.fail('The browser page is unavailable right after opening. Please run /go-to again.');
         return;
       }
 
-      if (searchPage === openedPage && isPageUsable(searchPage)) {
-        await progress.info('Using the freshly opened page for search.');
-      }
-
-      if (revived) {
-        await progress.info('Recovered the active browser page.');
-      }
-
-      await progress.success('Browser session ready.');
+      await progress.success('Browser session ready to search.');
 
       const searchTerm = buildSearchTerm(searchType, searchName, season, episode);
       await progress.info(`Searching for "${searchTerm}"...`);
-      const results = await runSearch(searchPage, searchTerm, (step) => progress.info(step));
+      const results = await runSearch(openedPage, searchTerm, (step) => progress.info(step));
       await progress.success(`Search finished with ${results.length} result(s).`);
 
       const message = formatResults(results, searchTerm);

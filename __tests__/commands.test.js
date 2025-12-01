@@ -1,7 +1,6 @@
 jest.mock('../src/services/browser', () => ({
   openWebsite: jest.fn().mockResolvedValue({ url: 'https://example.com/', page: { $x: jest.fn() } }),
   ensureUrl: jest.fn((url) => `${url}/`),
-  ensureActivePage: jest.fn(),
   isPageUsable: jest.fn((page) => Boolean(page && typeof page.$x === 'function')),
 }));
 jest.mock('../src/services/websiteStore', () => ({
@@ -22,7 +21,7 @@ jest.mock('../src/services/search', () => {
   };
 });
 
-const { openWebsite, ensureActivePage, isPageUsable } = require('../src/services/browser');
+const { openWebsite, isPageUsable } = require('../src/services/browser');
 const { setWebsite, getWebsite } = require('../src/services/websiteStore');
 const { openWithFlareSolverr } = require('../src/services/flaresolverr');
 const { runSearch } = require('../src/services/search');
@@ -50,7 +49,7 @@ describe('go-to command', () => {
 
     expect(openWebsite).toHaveBeenCalledWith('https://example.com/', true);
     expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
-    expect(editReply.mock.calls.at(-1)[0]).toContain('Opened https://example.com/ in a headless browser');
+    expect(editReply.mock.calls.at(-1)[0]).toContain('Opened the saved site. Provide type/name (and season/episode for shows) to trigger an on-page search.');
   });
 
   it('allows disabling headless mode', async () => {
@@ -68,9 +67,7 @@ describe('go-to command', () => {
 
     expect(openWebsite).toHaveBeenCalledWith('https://example.com/', false);
     expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
-    expect(editReply.mock.calls.at(-1)[0]).toContain(
-      'Opened https://example.com/ with headless mode disabled. The window will stay open until you close it.',
-    );
+    expect(editReply.mock.calls.at(-1)[0]).toContain('Opened the saved site. Provide type/name (and season/episode for shows) to trigger an on-page search.');
   });
 
   it('informs users when no site is saved', async () => {
@@ -110,9 +107,7 @@ describe('go-to command', () => {
     expect(openWithFlareSolverr).toHaveBeenCalledWith('https://example.com/');
     expect(openWebsite).toHaveBeenCalledWith('https://example.com/', true);
     expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
-    expect(editReply.mock.calls.at(-1)[0]).toContain(
-      'Opened https://example.com/ via FlareSolverr (http://solver:8191) in a headless browser',
-    );
+    expect(editReply.mock.calls.at(-1)[0]).toContain('Opened the saved site. Provide type/name (and season/episode for shows) to trigger an on-page search.');
   });
 
   it('keeps the browser visible when flaresolverr is used without headless mode', async () => {
@@ -135,16 +130,13 @@ describe('go-to command', () => {
     expect(openWithFlareSolverr).toHaveBeenCalledWith('https://example.com/');
     expect(openWebsite).toHaveBeenCalledWith('https://example.com/', false);
     expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
-    expect(editReply.mock.calls.at(-1)[0]).toContain(
-      'Opened https://example.com/ via FlareSolverr (http://solver:8191) with headless mode disabled. The window will stay open until you close it.',
-    );
+    expect(editReply.mock.calls.at(-1)[0]).toContain('Opened the saved site. Provide type/name (and season/episode for shows) to trigger an on-page search.');
   });
 
   it('runs a search when search inputs are provided', async () => {
     const deferReply = jest.fn();
     const editReply = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
-    ensureActivePage.mockResolvedValue({ page: { $x: jest.fn() }, revived: false });
     runSearch.mockResolvedValue([
       { name: 'Example s01e01', quality: '1080p', sizeText: '1.4 GB', health: 150 },
       { name: 'Example s01e01 720p', quality: '720p', sizeText: '900 MB', health: 120 },
@@ -181,7 +173,6 @@ describe('go-to command', () => {
     const deferReply = jest.fn();
     const editReply = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
-    ensureActivePage.mockResolvedValue({ page: { $x: jest.fn() }, revived: false });
 
     const options = {
       getBoolean: jest.fn().mockReturnValue(null),
