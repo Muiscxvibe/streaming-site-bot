@@ -1,5 +1,13 @@
-const fetch = require('node-fetch');
 const { ensureUrl } = require('./browser');
+
+async function fetchWithFallback(...args) {
+  if (typeof global.fetch === 'function') {
+    return global.fetch(...args);
+  }
+
+  const { default: nodeFetch } = await import('node-fetch');
+  return nodeFetch(...args);
+}
 
 const DEFAULT_ENDPOINT = process.env.FLARESOLVERR_URL || '';
 const DEFAULT_TIMEOUT_MS = 60000;
@@ -20,7 +28,7 @@ async function openWithFlareSolverr(target, endpoint = DEFAULT_ENDPOINT) {
     throw new Error('FlareSolverr URL is not configured. Set FLARESOLVERR_URL.');
   }
 
-  const response = await fetch(`${baseEndpoint}/v1`, {
+  const response = await fetchWithFallback(`${baseEndpoint}/v1`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
