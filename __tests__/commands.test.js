@@ -85,8 +85,11 @@ describe('go-to command', () => {
       { useFlareSolverr: false },
     );
     const finalMessage = editReply.mock.calls.at(-1)[0];
-    expect(finalMessage.content).toContain('Top matches ordered by health, quality, then smaller sizes:');
-    expect(finalMessage.content).toContain('Example s01e01');
+    const embed = finalMessage.embeds[0].data || finalMessage.embeds[0];
+
+    expect(finalMessage.content).toContain('Showing the best matches below.');
+    expect(embed.description).toContain('Example s01e01');
+    expect(embed.fields).toHaveLength(2);
     expect(finalMessage.components[0].components).toHaveLength(2);
     expect(saveResults).toHaveBeenCalled();
   });
@@ -118,7 +121,7 @@ describe('go-to command', () => {
       expect.any(Function),
       { useFlareSolverr: true },
     );
-    expect(editReply.mock.calls.at(-1)[0]).toContain('No matching results were found for "Example".');
+    expect(editReply.mock.calls.at(-1)[0].content).toContain('No matching results were found for "Example".');
   });
 
   it('informs users when no site is saved', async () => {

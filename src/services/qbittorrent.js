@@ -67,7 +67,7 @@ async function ensureSession() {
   return login();
 }
 
-async function addTorrent(url) {
+async function addTorrent(url, { savePath } = {}) {
   if (!url) {
     throw new Error('A torrent or magnet URL is required.');
   }
@@ -77,6 +77,11 @@ async function addTorrent(url) {
   const apiUrl = getApiUrl('/api/v2/torrents/add');
   const body = new URLSearchParams();
   body.set('urls', url);
+
+  if (savePath) {
+    body.set('savepath', savePath);
+    body.set('autoTMM', 'false');
+  }
 
   const response = await fetchWithFallback(apiUrl, {
     method: 'POST',
@@ -90,7 +95,7 @@ async function addTorrent(url) {
   if (response.status === 403 || response.status === 401) {
     config.cookie = null;
     await ensureSession();
-    return addTorrent(url);
+    return addTorrent(url, { savePath });
   }
 
   if (!response.ok) {

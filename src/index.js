@@ -19,6 +19,7 @@ const { getResult, clearToken } = require('./services/resultStore');
 const { createProgressTracker } = require('./services/progress');
 const { fetchDetailPage, extractDownloadLink } = require('./services/search');
 const { addTorrent, isConfigured } = require('./services/qbittorrent');
+const { getSavePathForType } = require('./services/savePathStore');
 
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith('.js'));
@@ -111,8 +112,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
       }
 
-      await progress.info('Sending to qBittorrent...');
-      await addTorrent(downloadUrl);
+      let savePath = null;
+      if (options?.searchType) {
+        try {
+          savePath = getSavePathForType(options.searchType);
+        } catch (error) {
+          console.warn('[download] Ignoring unknown search type for save path', error.message);
+        }
+      }
+
+      if (savePath) {
+        await progress.info(`Sending to qBittorrent at path: ${savePath}`);
+      } else {
+        await progress.info('Sending to qBittorrent...');
+      }
+
+      await addTorrent(downloadUrl, { savePath });
       await progress.success('qBittorrent accepted the download.');
       await progress.complete(`🚀 Now downloading: ${result.name}`);
 
