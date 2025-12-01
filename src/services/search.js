@@ -4,6 +4,35 @@ const RESULTS_TBODY_XPATH = '/html/body/div[1]/div[6]/div[1]/table[2]/tbody';
 
 const QUALITY_ORDER = ['2160p', '1440p', '1080p', '720p', '480p', '360p'];
 
+async function waitForXPath(page, xpath, options = {}) {
+  if (typeof page.waitForXPath === 'function') {
+    return page.waitForXPath(xpath, options);
+  }
+
+  const timeout = options.timeout ?? 30000;
+  await page.waitForFunction(
+    (target) => {
+      try {
+        return Boolean(
+          document.evaluate(target, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue,
+        );
+      } catch (error) {
+        console.warn('[search] XPath evaluation failed', error);
+        return false;
+      }
+    },
+    { timeout },
+    xpath,
+  );
+
+  const handles = await page.$x(xpath);
+  if (!handles.length) {
+    throw new Error(`Element not found for XPath: ${xpath}`);
+  }
+
+  return handles[0];
+}
+
 function buildSearchTerm(type, name, season, episode) {
   if (!type || !name) {
     throw new Error('Type (movie/show) and name are required to search.');
@@ -148,7 +177,7 @@ async function runSearch(page, searchTerm, report = () => {}) {
   await page.goto(searchUrl, GOTO_OPTIONS);
 
   await report('Waiting for results table');
-  const resultsBody = await page.waitForXPath(RESULTS_TBODY_XPATH, { timeout: 20000 });
+  const resultsBody = await waitForXPath(page, RESULTS_TBODY_XPATH, { timeout: 20000 });
   const rows = await resultsBody.$x('./tr');
 
   await report(`Found ${rows.length} row(s) in the results table`);
@@ -176,4 +205,5 @@ module.exports = {
   normalizeResults,
   sortResults,
   slugifySearchTerm,
+  waitForXPath,
 };

@@ -1,7 +1,22 @@
 jest.mock('../src/services/browser', () => ({
-  openWebsite: jest.fn().mockResolvedValue({ url: 'https://example.com/', page: { $x: jest.fn() } }),
+  openWebsite: jest.fn().mockResolvedValue({
+    url: 'https://example.com/',
+    page: { $x: jest.fn(), waitForFunction: jest.fn(), goto: jest.fn() },
+  }),
   ensureUrl: jest.fn((url) => `${url}/`),
-  isPageUsable: jest.fn((page) => Boolean(page && typeof page.$x === 'function')),
+  isPageUsable: jest.fn(
+    (page) =>
+      Boolean(
+        page &&
+          typeof page.$x === 'function' &&
+          (typeof page.waitForXPath === 'function' || typeof page.waitForFunction === 'function') &&
+          typeof page.goto === 'function',
+      ),
+  ),
+  ensureActivePage: jest.fn().mockResolvedValue({
+    page: { $x: jest.fn(), waitForFunction: jest.fn(), goto: jest.fn() },
+    revived: false,
+  }),
 }));
 jest.mock('../src/services/websiteStore', () => ({
   setWebsite: jest.fn(),

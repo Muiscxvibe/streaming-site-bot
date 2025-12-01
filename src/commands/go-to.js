@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { openWebsite, isPageUsable } = require('../services/browser');
+const { openWebsite, isPageUsable, ensureActivePage } = require('../services/browser');
 const { openWithFlareSolverr } = require('../services/flaresolverr');
 const { getWebsite } = require('../services/websiteStore');
 const { createProgressTracker } = require('../services/progress');
@@ -92,11 +92,19 @@ module.exports = {
       await progress.info('Preparing to search the opened site...');
 
       if (!isPageUsable(openedPage)) {
-        await progress.fail('The browser page is unavailable right after opening. Please run /go-to again.');
-        return;
-      }
+        await progress.info('Trying to recover the browser page before searching...');
+        const { page: revivedPage, revived } = await ensureActivePage();
 
-      await progress.success('Browser session ready to search.');
+        if (!isPageUsable(revivedPage)) {
+          await progress.fail('The browser page is unavailable right after opening. Please run /go-to again.');
+          return;
+        }
+
+        openedPage = revivedPage;
+        await progress.success(revived ? 'Browser session revived and ready to search.' : 'Browser session ready to search.');
+      } else {
+        await progress.success('Browser session ready to search.');
+      }
 
       const searchTerm = buildSearchTerm(searchType, searchName, season, episode);
       await progress.info(`Searching for "${searchTerm}"...`);

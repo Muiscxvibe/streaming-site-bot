@@ -28,8 +28,9 @@ let lastOpenedUrl = null;
 function isPageUsable(page) {
   if (!page) return false;
   const hasXPath = typeof page.$x === 'function';
-  const hasWait = typeof page.waitForXPath === 'function';
-  return hasXPath && hasWait;
+  const hasWait = typeof page.waitForXPath === 'function' || typeof page.waitForFunction === 'function';
+  const hasGoto = typeof page.goto === 'function';
+  return hasXPath && hasWait && hasGoto;
 }
 
 async function ensureBrowser(headless = true) {
