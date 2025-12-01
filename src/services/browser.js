@@ -49,6 +49,19 @@ async function ensureBrowser(headless = true) {
   return browserInstance;
 }
 
+async function resetBrowser() {
+  if (browserInstance) {
+    try {
+      await browserInstance.close();
+    } catch (error) {
+      console.warn('[browser] Failed to close browser during reset', error);
+    }
+  }
+
+  browserInstance = null;
+  currentPage = null;
+}
+
 async function openWebsite(target, headless = true) {
   const url = ensureUrl(target);
   const browser = await ensureBrowser(headless);
@@ -84,7 +97,7 @@ function getActivePage() {
   return null;
 }
 
-async function ensureActivePage() {
+async function ensureActivePage({ allowRestart = false } = {}) {
   const active = getActivePage();
   if (isPageUsable(active)) {
     return { page: active, revived: false };
@@ -105,6 +118,12 @@ async function ensureActivePage() {
     } catch (error) {
       console.warn('[browser] Failed to inspect existing pages', error);
     }
+
+    if (allowRestart) {
+      await resetBrowser();
+    }
+  } else if (allowRestart && browserInstance) {
+    await resetBrowser();
   }
 
   if (lastOpenedUrl) {
@@ -128,4 +147,5 @@ module.exports = {
   getActivePage,
   ensureActivePage,
   isPageUsable,
+  resetBrowser,
 };

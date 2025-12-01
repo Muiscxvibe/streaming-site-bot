@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { openWebsite, isPageUsable, ensureActivePage } = require('../services/browser');
+const { openWebsite, isPageUsable, ensureActivePage, resetBrowser } = require('../services/browser');
 const { openWithFlareSolverr } = require('../services/flaresolverr');
 const { getWebsite } = require('../services/websiteStore');
 const { createProgressTracker } = require('../services/progress');
@@ -91,15 +91,16 @@ module.exports = {
 
       await progress.info('Preparing to search the opened site...');
       if (!isPageUsable(openedPage)) {
-        await progress.info('Initial page looked unusable; attempting to recover before searching...');
-        const { page: revivedPage, revived } = await ensureActivePage();
+        await progress.info('Initial page looked unusable; restarting the browser and recovering the page...');
+        await resetBrowser();
+        const { page: revivedPage, revived } = await ensureActivePage({ allowRestart: true });
         openedPage = revivedPage;
         await progress.success(
           revivedPage
             ? revived
-              ? 'Browser session revived and ready to search.'
+              ? 'Browser session restarted and ready to search.'
               : 'Browser session ready to search.'
-            : 'Proceeding to retry with a recovered page...',
+            : 'Proceeding after attempting to recover the page...'
         );
       }
 
@@ -116,8 +117,9 @@ module.exports = {
           throw error;
         }
 
-        await progress.info('Page became unusable; attempting one recovery before retrying search...');
-        const { page: revivedPage, revived } = await ensureActivePage();
+        await progress.info('Page became unusable; restarting the browser and attempting one recovery before retrying search...');
+        await resetBrowser();
+        const { page: revivedPage, revived } = await ensureActivePage({ allowRestart: true });
 
         if (!isPageUsable(revivedPage)) {
           await progress.fail('The browser page is unavailable right after opening. Please run /go-to again.');

@@ -17,6 +17,7 @@ jest.mock('../src/services/browser', () => ({
     page: { $x: jest.fn(), waitForFunction: jest.fn(), goto: jest.fn() },
     revived: false,
   }),
+  resetBrowser: jest.fn().mockResolvedValue(),
 }));
 jest.mock('../src/services/websiteStore', () => ({
   setWebsite: jest.fn(),

@@ -26,10 +26,11 @@ jest.mock('puppeteer-extra', () => {
 });
 
 const puppeteer = require('puppeteer-extra');
-const { ensureUrl, openWebsite, GOTO_OPTIONS, ensureActivePage } = require('../src/services/browser');
+const { ensureUrl, openWebsite, GOTO_OPTIONS, ensureActivePage, resetBrowser } = require('../src/services/browser');
 
 beforeEach(() => {
   jest.clearAllMocks();
+  return resetBrowser();
 });
 
 describe('ensureUrl', () => {
@@ -86,6 +87,26 @@ describe('ensureActivePage', () => {
 
     expect(revived).toBe(true);
     expect(puppeteer.__mockBrowser.newPage).toHaveBeenCalledTimes(2);
+    expect(page).toBe(puppeteer.__mockPage);
+  });
+
+  it('restarts the browser when allowed and no usable pages remain', async () => {
+    const unusablePage = {
+      isClosed: jest.fn().mockReturnValue(false),
+      goto: jest.fn(),
+      close: jest.fn(),
+    };
+
+    puppeteer.__mockBrowser.newPage.mockResolvedValueOnce(unusablePage).mockResolvedValue(puppeteer.__mockPage);
+
+    await openWebsite('example.com');
+
+    puppeteer.__mockBrowser.pages.mockResolvedValueOnce([unusablePage]);
+
+    const { page, revived } = await ensureActivePage({ allowRestart: true });
+
+    expect(revived).toBe(true);
+    expect(puppeteer.launch).toHaveBeenCalledTimes(2);
     expect(page).toBe(puppeteer.__mockPage);
   });
 });
