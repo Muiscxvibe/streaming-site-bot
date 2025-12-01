@@ -90,9 +90,33 @@ module.exports = {
       }
 
       await progress.info('Preparing to search the opened site...');
-
       if (!isPageUsable(openedPage)) {
-        await progress.info('Trying to recover the browser page before searching...');
+        await progress.info('Initial page looked unusable; attempting to recover before searching...');
+        const { page: revivedPage, revived } = await ensureActivePage();
+        openedPage = revivedPage;
+        await progress.success(
+          revivedPage
+            ? revived
+              ? 'Browser session revived and ready to search.'
+              : 'Browser session ready to search.'
+            : 'Proceeding to retry with a recovered page...',
+        );
+      }
+
+      const searchTerm = buildSearchTerm(searchType, searchName, season, episode);
+      await progress.info(`Searching for "${searchTerm}"...`);
+      let results;
+
+      try {
+        results = await runSearch(openedPage, searchTerm, (step) => progress.info(step));
+      } catch (error) {
+        const needsRecovery = /Active browser page is unavailable/i.test(error.message) || !isPageUsable(openedPage);
+
+        if (!needsRecovery) {
+          throw error;
+        }
+
+        await progress.info('Page became unusable; attempting one recovery before retrying search...');
         const { page: revivedPage, revived } = await ensureActivePage();
 
         if (!isPageUsable(revivedPage)) {
@@ -101,14 +125,9 @@ module.exports = {
         }
 
         openedPage = revivedPage;
-        await progress.success(revived ? 'Browser session revived and ready to search.' : 'Browser session ready to search.');
-      } else {
-        await progress.success('Browser session ready to search.');
+        await progress.success(revived ? 'Browser session revived. Retrying search...' : 'Using active page. Retrying search...');
+        results = await runSearch(openedPage, searchTerm, (step) => progress.info(step));
       }
-
-      const searchTerm = buildSearchTerm(searchType, searchName, season, episode);
-      await progress.info(`Searching for "${searchTerm}"...`);
-      const results = await runSearch(openedPage, searchTerm, (step) => progress.info(step));
       await progress.success(`Search finished with ${results.length} result(s).`);
 
       const message = formatResults(results, searchTerm);
