@@ -1,6 +1,12 @@
 jest.mock('puppeteer', () => {
   const goto = jest.fn();
-  const page = { goto, isClosed: jest.fn().mockReturnValue(false), close: jest.fn() };
+  const page = {
+    goto,
+    isClosed: jest.fn().mockReturnValue(false),
+    close: jest.fn(),
+    $x: jest.fn(),
+    waitForXPath: jest.fn(),
+  };
   const newPage = jest.fn().mockResolvedValue(page);
   const close = jest.fn();
   const pages = jest.fn().mockResolvedValue([page]);
@@ -17,6 +23,10 @@ jest.mock('puppeteer', () => {
 
 const puppeteer = require('puppeteer');
 const { ensureUrl, openWebsite, GOTO_OPTIONS, ensureActivePage } = require('../src/services/browser');
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
 
 describe('ensureUrl', () => {
   it('adds https when protocol missing', () => {
@@ -52,5 +62,25 @@ describe('ensureActivePage', () => {
 
     expect(page).toBe(puppeteer.__mockPage);
     expect(revived).toBe(false);
+  });
+
+  it('reopens the last URL when the current page is unusable', async () => {
+    const unusablePage = {
+      isClosed: jest.fn().mockReturnValue(false),
+      goto: jest.fn(),
+      close: jest.fn(),
+    };
+    puppeteer.__mockBrowser.newPage
+      .mockResolvedValueOnce(unusablePage)
+      .mockResolvedValue(puppeteer.__mockPage);
+    puppeteer.__mockBrowser.pages.mockResolvedValue([unusablePage]);
+
+    await openWebsite('example.com');
+
+    const { page, revived } = await ensureActivePage();
+
+    expect(revived).toBe(true);
+    expect(puppeteer.__mockBrowser.newPage).toHaveBeenCalledTimes(2);
+    expect(page).toBe(puppeteer.__mockPage);
   });
 });

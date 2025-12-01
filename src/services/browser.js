@@ -18,6 +18,13 @@ let currentPage = null;
 let currentHeadless = true;
 let lastOpenedUrl = null;
 
+function isPageUsable(page) {
+  if (!page) return false;
+  const hasXPath = typeof page.$x === 'function';
+  const hasWait = typeof page.waitForXPath === 'function';
+  return hasXPath && hasWait;
+}
+
 async function ensureBrowser(headless = true) {
   const isRunning = browserInstance && browserInstance.process() && !browserInstance.process().killed;
 
@@ -71,7 +78,7 @@ function getActivePage() {
 
 async function ensureActivePage() {
   const active = getActivePage();
-  if (active) {
+  if (isPageUsable(active)) {
     return { page: active, revived: false };
   }
 
@@ -79,8 +86,8 @@ async function ensureActivePage() {
     try {
       const pages = await browserInstance.pages();
       const firstOpenPage = pages.find((page) => {
-        if (typeof page.isClosed !== 'function') return true;
-        return !page.isClosed();
+        if (typeof page.isClosed === 'function' && page.isClosed()) return false;
+        return isPageUsable(page);
       });
 
       if (firstOpenPage) {
@@ -95,7 +102,9 @@ async function ensureActivePage() {
   if (lastOpenedUrl) {
     try {
       await openWebsite(lastOpenedUrl, currentHeadless);
-      return { page: currentPage, revived: true };
+      if (isPageUsable(currentPage)) {
+        return { page: currentPage, revived: true };
+      }
     } catch (error) {
       console.warn('[browser] Failed to reopen last page', error);
     }
