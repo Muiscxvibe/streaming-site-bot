@@ -1,9 +1,9 @@
 # streaming-site-bot
 
-Discord bot that provides two slash commands:
+Discord bot that provides two admin-only slash commands:
 
-- `/website` (admin-only): ask an admin for a website URL and confirm it for later browsing.
-- `/go-to`: open the provided website in a headless Chromium instance.
+- `/website`: store a website URL for later browsing.
+- `/go-to`: open the stored website on the machine running the bot (headless Chromium).
 
 ## Setup
 1. Install dependencies:

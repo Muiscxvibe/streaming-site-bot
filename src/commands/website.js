@@ -1,4 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { ensureUrl } = require('../services/browser');
+const { setWebsite } = require('../services/websiteStore');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -12,9 +14,12 @@ module.exports = {
         .setRequired(true),
     ),
   async execute(interaction) {
-    const url = interaction.options.getString('url', true);
+    const urlInput = interaction.options.getString('url', true);
+    const normalized = ensureUrl(urlInput);
+    setWebsite(normalized);
+
     await interaction.reply({
-      content: `Saved website: ${url}. Use /go-to to open it in a headless browser.`,
+      content: `Saved website: ${normalized}. Use /go-to to open it on the bot machine.`,
       ephemeral: true,
     });
   },
