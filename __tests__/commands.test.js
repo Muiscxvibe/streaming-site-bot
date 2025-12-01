@@ -6,9 +6,16 @@ jest.mock('../src/services/websiteStore', () => ({
   setWebsite: jest.fn(),
   getWebsite: jest.fn(),
 }));
+jest.mock('../src/services/flaresolverr', () => ({
+  openWithFlareSolverr: jest.fn().mockResolvedValue({
+    url: 'https://example.com/',
+    endpoint: 'http://solver:8191',
+  }),
+}));
 
 const { openWebsite } = require('../src/services/browser');
 const { setWebsite, getWebsite } = require('../src/services/websiteStore');
+const { openWithFlareSolverr } = require('../src/services/flaresolverr');
 const goToCommand = require('../src/commands/go-to');
 const websiteCommand = require('../src/commands/website');
 
@@ -20,7 +27,9 @@ describe('go-to command', () => {
   it('replies with success message after opening stored site', async () => {
     const reply = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
-    const options = { getBoolean: jest.fn().mockReturnValue(null) };
+    const options = {
+      getBoolean: jest.fn((name) => (name === 'headless' ? null : false)),
+    };
     const interaction = { reply, options };
 
     await goToCommand.execute(interaction);
@@ -35,7 +44,9 @@ describe('go-to command', () => {
   it('allows disabling headless mode', async () => {
     const reply = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
-    const options = { getBoolean: jest.fn().mockReturnValue(false) };
+    const options = {
+      getBoolean: jest.fn((name) => (name === 'headless' ? false : false)),
+    };
     const interaction = { reply, options };
 
     await goToCommand.execute(interaction);
@@ -57,6 +68,24 @@ describe('go-to command', () => {
     expect(openWebsite).not.toHaveBeenCalled();
     expect(reply).toHaveBeenCalledWith({
       content: 'No website saved yet. Use /website to set one first.',
+      ephemeral: true,
+    });
+  });
+
+  it('routes through flaresolverr when requested', async () => {
+    const reply = jest.fn();
+    getWebsite.mockReturnValue('https://example.com/');
+    const options = {
+      getBoolean: jest.fn((name) => (name === 'use-flaresolverr' ? true : null)),
+    };
+    const interaction = { reply, options };
+
+    await goToCommand.execute(interaction);
+
+    expect(openWithFlareSolverr).toHaveBeenCalledWith('https://example.com/');
+    expect(openWebsite).not.toHaveBeenCalled();
+    expect(reply).toHaveBeenCalledWith({
+      content: 'Opened https://example.com/ via FlareSolverr (http://solver:8191).',
       ephemeral: true,
     });
   });

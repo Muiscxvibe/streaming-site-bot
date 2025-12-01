@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { openWebsite } = require('../services/browser');
+const { openWithFlareSolverr } = require('../services/flaresolverr');
 const { getWebsite } = require('../services/websiteStore');
 
 module.exports = {
@@ -11,6 +12,12 @@ module.exports = {
       option
         .setName('headless')
         .setDescription('Run the browser in headless mode (default: true)')
+        .setRequired(false),
+    )
+    .addBooleanOption((option) =>
+      option
+        .setName('use-flaresolverr')
+        .setDescription('Route through FlareSolverr to bypass human verification (requires FLARESOLVERR_URL)')
         .setRequired(false),
     ),
   async execute(interaction) {
@@ -24,15 +31,24 @@ module.exports = {
       return;
     }
 
+    const useFlareSolverr = interaction.options?.getBoolean('use-flaresolverr') ?? false;
     const headless = interaction.options?.getBoolean('headless') ?? true;
 
     try {
-      const normalized = await openWebsite(storedWebsite, headless);
-      const modeLabel = headless ? 'in a headless browser' : 'with headless mode disabled';
-      await interaction.reply({
-        content: `Opened ${normalized} ${modeLabel}.`,
-        ephemeral: true,
-      });
+      if (useFlareSolverr) {
+        const { url, endpoint } = await openWithFlareSolverr(storedWebsite);
+        await interaction.reply({
+          content: `Opened ${url} via FlareSolverr (${endpoint}).`,
+          ephemeral: true,
+        });
+      } else {
+        const normalized = await openWebsite(storedWebsite, headless);
+        const modeLabel = headless ? 'in a headless browser' : 'with headless mode disabled';
+        await interaction.reply({
+          content: `Opened ${normalized} ${modeLabel}.`,
+          ephemeral: true,
+        });
+      }
     } catch (error) {
       await interaction.reply({
         content: `Could not open that URL: ${error.message}`,
