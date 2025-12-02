@@ -1,4 +1,4 @@
-const { MessageFlags } = require('discord.js');
+const { MessageFlags, DiscordAPIError } = require('discord.js');
 const { getTorrentByTag } = require('./qbittorrent');
 
 function formatBytes(bytes) {
@@ -46,6 +46,19 @@ function renderProgress(info, displayName) {
   };
 }
 
+async function safeEdit(message, payload) {
+  try {
+    await message.edit(payload);
+    return true;
+  } catch (error) {
+    if ((error instanceof DiscordAPIError && error.code === 10008) || error?.code === 10008) {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
 async function startDownloadProgress(interaction, { tag, displayName }) {
   if (!interaction?.followUp || !tag) return null;
 
@@ -63,7 +76,8 @@ async function startDownloadProgress(interaction, { tag, displayName }) {
       if (!info) {
         misses += 1;
         if (misses > 6) {
-          await progressMessage.edit({ content: `⚠️ Could not find the download for ${displayName} to track.` });
+          const edited = await safeEdit(progressMessage, { content: `⚠️ Could not find the download for ${displayName} to track.` });
+          if (!edited) return;
           return;
         }
         setTimeout(tick, 5000);
@@ -71,15 +85,22 @@ async function startDownloadProgress(interaction, { tag, displayName }) {
       }
 
       const rendered = renderProgress(info, displayName);
-      await progressMessage.edit({ content: rendered.content });
+      const edited = await safeEdit(progressMessage, { content: rendered.content });
+      if (!edited) return;
 
       if (!rendered.done) {
         setTimeout(tick, 5000);
       }
     } catch (error) {
-      await progressMessage.edit({
-        content: `⚠️ Lost connection while tracking **${displayName}**: ${error.message}`,
-      });
+      try {
+        const edited = await safeEdit(progressMessage, {
+          content: `⚠️ Lost connection while tracking **${displayName}**: ${error.message}`,
+        });
+        if (!edited) return;
+      } catch (innerError) {
+        if (innerError instanceof DiscordAPIError && innerError.code === 10008) return;
+        throw innerError;
+      }
     }
   };
 
@@ -87,4 +108,4 @@ async function startDownloadProgress(interaction, { tag, displayName }) {
   return progressMessage;
 }
 
-module.exports = { startDownloadProgress, renderProgress, formatBytes, formatEta };
+module.exports = { startDownloadProgress, renderProgress, formatBytes, formatEta, safeEdit };
