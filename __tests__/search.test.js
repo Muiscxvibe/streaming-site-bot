@@ -18,6 +18,10 @@ describe('search helpers', () => {
     expect(buildSearchTerm('show', 'South Park', 1, 2)).toBe('South Park s01e02');
   });
 
+  it('builds season-only show search terms', () => {
+    expect(buildSearchTerm('show', 'South Park', 2, null)).toBe('South Park s02');
+  });
+
   it('builds movie search terms without padding', () => {
     expect(buildSearchTerm('movie', 'Inception')).toBe('Inception');
   });
@@ -100,6 +104,54 @@ describe('runSearch', () => {
 
     const download = extractDownloadLink(detailHtml, 'https://example.com/detail');
     expect(download).toBe('magnet:?xt=urn:btih:456');
+  });
+
+  it('returns detail url when it is already a magnet link', () => {
+    const magnetUrl = 'magnet:?xt=urn:btih:789';
+    const download = extractDownloadLink('', magnetUrl);
+
+    expect(download).toBe(magnetUrl);
+  });
+
+  it('returns detail url when it is a direct torrent link', () => {
+    const torrentUrl = 'https://itorrents.net/file.torrent';
+    const download = extractDownloadLink('', torrentUrl);
+
+    expect(download).toBe(torrentUrl);
+  });
+
+  it('returns detail url when it is a torrent link with query params', () => {
+    const torrentUrl = 'https://itorrents.net/file.torrent?title=South-Park';
+    const download = extractDownloadLink('', torrentUrl);
+
+    expect(download).toBe(torrentUrl);
+  });
+
+  it('filters out results below 720p and orders by health then size', async () => {
+    const customHtml = `
+      <html>
+        <body>
+          <table>
+            <tbody>
+              <tr><td>Low quality 480p</td><td>700 MB</td><td>999</td></tr>
+              <tr><td>Show 1080p</td><td>2 GB</td><td>300</td></tr>
+              <tr><td>Show 720p smaller</td><td>900 MB</td><td>300</td></tr>
+              <tr><td>Show 720p larger</td><td>1.5 GB</td><td>300</td></tr>
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    fetchWithFallback.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve(customHtml) });
+
+    const { results } = await runSearch('Show s01', 'https://example.com');
+
+    expect(results).toHaveLength(3);
+    expect(results.map((r) => r.name)).not.toEqual(expect.arrayContaining(['Low quality 480p']));
+    expect(results[0].name).toContain('Show 1080p');
+    expect(results[1].name).toContain('Show 720p smaller');
+    expect(results[2].name).toContain('Show 720p larger');
   });
 
   it('falls back to any torrent link when selectors miss', () => {

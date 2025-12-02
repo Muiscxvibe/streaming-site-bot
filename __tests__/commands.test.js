@@ -7,6 +7,8 @@ jest.mock('../src/services/search', () => {
   return {
     ...actual,
     runSearch: jest.fn(),
+    fetchDetailPage: jest.fn(),
+    extractDownloadLink: jest.fn(),
   };
 });
 jest.mock('../src/services/resultStore', () => ({
@@ -15,12 +17,22 @@ jest.mock('../src/services/resultStore', () => ({
 jest.mock('../src/services/qbittorrent', () => ({
   isConfigured: jest.fn(),
   setQbittorrentConfig: jest.fn(),
+  addTorrent: jest.fn(),
+}));
+jest.mock('../src/services/autocorrect', () => ({
+  autocorrectTitle: jest.fn(),
+  fetchShowSeasonCount: jest.fn(),
+}));
+jest.mock('../src/services/downloadProgress', () => ({
+  startDownloadProgress: jest.fn(),
 }));
 
 const { setWebsite, getWebsite } = require('../src/services/websiteStore');
-const { runSearch } = require('../src/services/search');
+const { runSearch, fetchDetailPage, extractDownloadLink } = require('../src/services/search');
 const { saveResults } = require('../src/services/resultStore');
-const { isConfigured } = require('../src/services/qbittorrent');
+const { isConfigured, addTorrent } = require('../src/services/qbittorrent');
+const { autocorrectTitle, fetchShowSeasonCount } = require('../src/services/autocorrect');
+const { startDownloadProgress } = require('../src/services/downloadProgress');
 const goToCommand = require('../src/commands/go-to');
 const websiteCommand = require('../src/commands/website');
 const qbittorrentCommand = require('../src/commands/qbittorrent');
@@ -28,139 +40,241 @@ const { MessageFlags } = require('discord.js');
 
 beforeEach(() => {
   jest.clearAllMocks();
+  autocorrectTitle.mockImplementation(async (name) => ({ original: name, corrected: name, suggestion: null }));
+  fetchShowSeasonCount.mockResolvedValue(null);
+  fetchDetailPage.mockResolvedValue({ html: '<a href="magnet:?xt=urn:btih:123">magnet</a>', url: 'https://detail' });
+  extractDownloadLink.mockReturnValue('magnet:?xt=urn:btih:123');
 });
 
 describe('go-to command', () => {
-  it('runs a search using the stored site and lists formatted results', async () => {
-    const deferReply = jest.fn();
-    const editReply = jest.fn();
+  it('starts an interactive session with media type buttons', async () => {
+    const reply = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
-    saveResults.mockReturnValue('token-123');
-    isConfigured.mockReturnValue(true);
-
-    runSearch.mockResolvedValue({
-      results: [
-        {
-          name: 'Example s01e01',
-          quality: '1080p',
-          sizeText: '1.4 GB',
-          health: 150,
-          detailUrl: 'https://example.com/example.torrent',
-        },
-        {
-          name: 'Example s01e01 720p',
-          quality: '720p',
-          sizeText: '900 MB',
-          health: 120,
-          detailUrl: 'https://example.com/example2.torrent',
-        },
-      ],
-      searchUrl: 'https://example.com/search/all/example-s01e01/',
-    });
-
-    const options = {
-      getBoolean: jest.fn((name) => {
-        if (name === 'use-flaresolverr') return false;
-        if (name === 'headless') return false;
-        return null;
-      }),
-      getString: jest.fn((name) => {
-        if (name === 'type') return 'show';
-        if (name === 'name') return 'Example';
-        return null;
-      }),
-      getInteger: jest.fn((name) => {
-        if (name === 'season') return 1;
-        if (name === 'episode') return 1;
-        return null;
-      }),
-    };
-
-    await goToCommand.execute({ deferReply, editReply, options });
-
-    expect(runSearch).toHaveBeenCalledWith(
-      'Example s01e01',
-      'https://example.com/',
-      expect.any(Function),
-      { useFlareSolverr: false },
-    );
-    const finalMessage = editReply.mock.calls.at(-1)[0];
-    expect(finalMessage.content).toContain('Top matches ordered by health, quality, then smaller sizes:');
-    expect(finalMessage.content).toContain('Example s01e01');
-    expect(finalMessage.components[0].components).toHaveLength(2);
-    expect(saveResults).toHaveBeenCalled();
-  });
-
-  it('passes the flaresolverr option through to the search service', async () => {
-    const deferReply = jest.fn();
-    const editReply = jest.fn();
-    getWebsite.mockReturnValue('https://example.com/');
-    saveResults.mockReturnValue('token-123');
-    isConfigured.mockReturnValue(false);
-
-    runSearch.mockResolvedValue({ results: [], searchUrl: 'https://example.com/search/all/example/' });
-
-    const options = {
-      getBoolean: jest.fn((name) => (name === 'use-flaresolverr' ? true : null)),
-      getString: jest.fn((name) => {
-        if (name === 'type') return 'movie';
-        if (name === 'name') return 'Example';
-        return null;
-      }),
-      getInteger: jest.fn().mockReturnValue(null),
-    };
-
-    await goToCommand.execute({ deferReply, editReply, options });
-
-    expect(runSearch).toHaveBeenCalledWith(
-      'Example',
-      'https://example.com/',
-      expect.any(Function),
-      { useFlareSolverr: true },
-    );
-    expect(editReply.mock.calls.at(-1)[0]).toContain('No matching results were found for "Example".');
-  });
-
-  it('informs users when no site is saved', async () => {
-    const deferReply = jest.fn();
-    const editReply = jest.fn();
-    getWebsite.mockReturnValue(null);
-    const interaction = {
-      deferReply,
-      editReply,
-      options: {
-        getBoolean: jest.fn().mockReturnValue(null),
-        getString: jest.fn().mockReturnValue(null),
-        getInteger: jest.fn().mockReturnValue(null),
-      },
-    };
+    const interaction = { user: { id: 'user1' }, reply };
 
     await goToCommand.execute(interaction);
 
-    expect(runSearch).not.toHaveBeenCalled();
-    expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
-    expect(editReply.mock.calls.at(-1)[0]).toContain('No website saved yet. Use /website to set one first.');
+    const call = reply.mock.calls[0][0];
+    expect(call.content).toContain('Select a media type');
+    expect(call.components[0].components[0].data.custom_id).toContain('goto:type');
   });
 
-  it('validates show requirements when searching', async () => {
-    const deferReply = jest.fn();
-    const editReply = jest.fn();
+  it('runs a movie search after modal submission without correction', async () => {
     getWebsite.mockReturnValue('https://example.com/');
+    saveResults.mockReturnValue('token-123');
+    isConfigured.mockReturnValue(true);
+    runSearch.mockResolvedValue({
+      results: [
+        { name: 'Movie', quality: '720p', sizeText: '700 MB', health: 100, detailUrl: 'https://detail' },
+      ],
+      searchUrl: 'https://example.com/search/all/movie/',
+    });
 
-    const options = {
-      getBoolean: jest.fn().mockReturnValue(null),
-      getString: jest.fn((name) => {
-        if (name === 'type') return 'show';
-        if (name === 'name') return 'Example Show';
-        return null;
-      }),
-      getInteger: jest.fn().mockReturnValue(null),
-    };
+    const reply = jest.fn();
+    const editReply = jest.fn();
+    const interaction = { user: { id: 'user1' }, reply };
+    await goToCommand.execute(interaction);
+    const sessionId = [...goToCommand.__sessionStore.keys()].at(-1);
 
-    await goToCommand.execute({ deferReply, editReply, options });
+    await goToCommand.handleModal({
+      customId: `goto-modal:movie:${sessionId}`,
+      fields: { getTextInputValue: (name) => (name === 'name' ? 'Moive' : '') },
+      user: { id: 'user1' },
+      reply,
+      editReply,
+    });
 
-    expect(runSearch).not.toHaveBeenCalled();
-    expect(editReply.mock.calls.at(-1)[0]).toContain('Season and episode are required for shows.');
+    expect(runSearch).toHaveBeenCalled();
+    expect(saveResults).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({ searchType: 'movie' }));
+  });
+
+  it('prompts scope selection and runs a season search when chosen', async () => {
+    getWebsite.mockReturnValue('https://example.com/');
+    saveResults.mockReturnValue('token-123');
+    isConfigured.mockReturnValue(true);
+    runSearch.mockResolvedValue({
+      results: [
+        { name: 'Season pack', quality: '720p', sizeText: '1 GB', health: 100, detailUrl: 'https://detail/season' },
+      ],
+      searchUrl: 'https://example.com/search/all/show-s02/',
+    });
+
+    const reply = jest.fn();
+    const editReply = jest.fn();
+    const update = jest.fn();
+    fetchShowSeasonCount.mockResolvedValue(3);
+
+    await goToCommand.execute({ user: { id: 'user1' }, reply });
+    const sessionId = [...goToCommand.__sessionStore.keys()].at(-1);
+
+    await goToCommand.handleModal({
+      customId: `goto-modal:show:${sessionId}`,
+      fields: {
+        getTextInputValue: (name) => {
+          if (name === 'name') return 'South Park';
+          if (name === 'season') return '2';
+          if (name === 'episode') return '';
+          return '';
+        },
+      },
+      user: { id: 'user1' },
+      reply,
+      editReply,
+    });
+
+    const scopePayload = reply.mock.calls.at(-1)[0];
+    expect(scopePayload.components[0].components[1].data.custom_id).toContain('goto:scope');
+
+    await goToCommand.handleButton({
+      customId: `goto:scope:${sessionId}:season`,
+      update,
+      user: { id: 'user1' },
+      reply,
+      editReply,
+    });
+
+    expect(runSearch).toHaveBeenCalled();
+  });
+
+  it('downloads top results for all detected seasons when requested', async () => {
+    getWebsite.mockReturnValue('https://example.com/');
+    isConfigured.mockReturnValue(true);
+    fetchShowSeasonCount.mockResolvedValue(2);
+
+    runSearch
+      .mockResolvedValueOnce({
+        results: [{ name: 'S1 pack', detailUrl: 'https://detail/s1' }],
+        searchUrl: 'https://example.com/search/all/show-s01/',
+      })
+      .mockResolvedValueOnce({
+        results: [{ name: 'S2 pack', detailUrl: 'https://detail/s2' }],
+        searchUrl: 'https://example.com/search/all/show-s02/',
+      });
+
+    const reply = jest.fn();
+    const editReply = jest.fn();
+    const update = jest.fn();
+
+    await goToCommand.execute({ user: { id: 'user1' }, reply });
+    const sessionId = [...goToCommand.__sessionStore.keys()].at(-1);
+
+    await goToCommand.handleModal({
+      customId: `goto-modal:show:${sessionId}`,
+      fields: {
+        getTextInputValue: (name) => {
+          if (name === 'name') return 'Some Show';
+          if (name === 'season') return 'all';
+          if (name === 'episode') return '';
+          return '';
+        },
+      },
+      user: { id: 'user1' },
+      reply,
+      editReply,
+    });
+
+    expect(runSearch).toHaveBeenCalledTimes(2);
+    expect(addTorrent).toHaveBeenCalledTimes(2);
+    expect(startDownloadProgress).toHaveBeenCalledTimes(2);
+  });
+
+  it('probes season count when Google lookup fails and still downloads all', async () => {
+    getWebsite.mockReturnValue('https://example.com/');
+    isConfigured.mockReturnValue(true);
+    fetchShowSeasonCount.mockResolvedValue(null);
+
+    runSearch
+      .mockResolvedValueOnce({
+        // probe season 1
+        results: [{ name: 'S1 pack probe', detailUrl: 'https://detail/probe-s1' }],
+        searchUrl: 'https://example.com/search/all/show-s01/',
+      })
+      .mockResolvedValueOnce({
+        // probe season 2
+        results: [{ name: 'S2 pack probe', detailUrl: 'https://detail/probe-s2' }],
+        searchUrl: 'https://example.com/search/all/show-s02/',
+      })
+      .mockResolvedValueOnce({
+        // probe season 3 (none found, stop probing)
+        results: [],
+        searchUrl: 'https://example.com/search/all/show-s03/',
+      })
+      .mockResolvedValueOnce({
+        // actual download for season 1
+        results: [{ name: 'S1 pack', detailUrl: 'https://detail/s1' }],
+        searchUrl: 'https://example.com/search/all/show-s01/',
+      })
+      .mockResolvedValueOnce({
+        // actual download for season 2
+        results: [{ name: 'S2 pack', detailUrl: 'https://detail/s2' }],
+        searchUrl: 'https://example.com/search/all/show-s02/',
+      });
+
+    const reply = jest.fn();
+    const editReply = jest.fn();
+
+    await goToCommand.execute({ user: { id: 'user1' }, reply });
+    const sessionId = [...goToCommand.__sessionStore.keys()].at(-1);
+
+    await goToCommand.handleModal({
+      customId: `goto-modal:show:${sessionId}`,
+      fields: {
+        getTextInputValue: (name) => {
+          if (name === 'name') return 'Probe Show';
+          if (name === 'season') return 'all';
+          if (name === 'episode') return '';
+          return '';
+        },
+      },
+      user: { id: 'user1' },
+      reply,
+      editReply,
+    });
+
+    expect(runSearch).toHaveBeenCalledTimes(5);
+    expect(addTorrent).toHaveBeenCalledTimes(2);
+    expect(startDownloadProgress).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-fetches season count when a correction is rejected', async () => {
+    getWebsite.mockReturnValue('https://example.com/');
+    isConfigured.mockReturnValue(true);
+    autocorrectTitle.mockResolvedValue({ original: 'Sauth Park', corrected: 'South Park', suggestion: 'South Park' });
+    fetchShowSeasonCount
+      .mockResolvedValueOnce(20) // initial spellcheck using corrected title
+      .mockResolvedValueOnce(5); // after rejecting correction
+
+    const reply = jest.fn();
+    const update = jest.fn();
+
+    await goToCommand.execute({ user: { id: 'user1' }, reply });
+    const sessionId = [...goToCommand.__sessionStore.keys()].at(-1);
+
+    await goToCommand.handleModal({
+      customId: `goto-modal:show:${sessionId}`,
+      fields: {
+        getTextInputValue: (name) => {
+          if (name === 'name') return 'Sauth Park';
+          if (name === 'season') return '1';
+          if (name === 'episode') return '';
+          return '';
+        },
+      },
+      user: { id: 'user1' },
+      reply,
+      editReply: jest.fn(),
+    });
+
+    await goToCommand.handleButton({
+      customId: `goto:confirm:${sessionId}:no`,
+      update,
+      user: { id: 'user1' },
+      reply,
+      editReply: jest.fn(),
+    });
+
+    expect(fetchShowSeasonCount).toHaveBeenCalledTimes(2);
+    expect(fetchShowSeasonCount).toHaveBeenLastCalledWith('Sauth Park');
   });
 });
 
