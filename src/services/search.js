@@ -54,11 +54,16 @@ function buildSearchTerm(type, name, season, episode) {
   }
 
   if (type === 'show') {
-    if (season == null || episode == null) {
-      throw new Error('Season and episode are required for shows.');
+    if (season == null) {
+      throw new Error('A season is required for show searches.');
     }
 
     const paddedSeason = String(season).padStart(2, '0');
+
+    if (episode == null) {
+      return `${name} s${paddedSeason}`;
+    }
+
     const paddedEpisode = String(episode).padStart(2, '0');
     return `${name} s${paddedSeason}e${paddedEpisode}`;
   }

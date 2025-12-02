@@ -24,6 +24,31 @@ function normalizeTitleCase(text) {
     .join(' ');
 }
 
+async function fetchShowSeasonCount(title) {
+  const query = `${title} number of seasons`;
+
+  try {
+    const url = `https://www.google.com/search?client=firefox&q=${encodeURIComponent(query)}`;
+    const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+
+    if (!response.ok) return null;
+
+    const body = await response.text();
+    const match = body.match(/(\d+)\s+seasons?/i);
+
+    if (match) {
+      const count = Number.parseInt(match[1], 10);
+      if (!Number.isNaN(count) && count > 0) {
+        return count;
+      }
+    }
+  } catch (error) {
+    console.warn('[autocorrect] Failed to fetch season count', error.message);
+  }
+
+  return null;
+}
+
 async function autocorrectTitle(input) {
   const trimmed = input.trim();
   if (!trimmed) return { original: input, corrected: input, suggestion: null };
@@ -38,4 +63,4 @@ async function autocorrectTitle(input) {
   return { original: trimmed, corrected: basic, suggestion: null };
 }
 
-module.exports = { autocorrectTitle };
+module.exports = { autocorrectTitle, fetchShowSeasonCount };

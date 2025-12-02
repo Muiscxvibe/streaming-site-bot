@@ -18,6 +18,10 @@ describe('search helpers', () => {
     expect(buildSearchTerm('show', 'South Park', 1, 2)).toBe('South Park s01e02');
   });
 
+  it('builds season-only show search terms', () => {
+    expect(buildSearchTerm('show', 'South Park', 2, null)).toBe('South Park s02');
+  });
+
   it('builds movie search terms without padding', () => {
     expect(buildSearchTerm('movie', 'Inception')).toBe('Inception');
   });

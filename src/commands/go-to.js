@@ -12,11 +12,12 @@ const {
 } = require('discord.js');
 const { randomUUID } = require('node:crypto');
 const { getWebsite } = require('../services/websiteStore');
-const { runSearch, buildSearchTerm } = require('../services/search');
+const { runSearch, buildSearchTerm, fetchDetailPage, extractDownloadLink } = require('../services/search');
 const { saveResults } = require('../services/resultStore');
-const { isConfigured } = require('../services/qbittorrent');
+const { isConfigured, addTorrent } = require('../services/qbittorrent');
 const { createProgressTracker } = require('../services/progress');
-const { autocorrectTitle } = require('../services/autocorrect');
+const { autocorrectTitle, fetchShowSeasonCount } = require('../services/autocorrect');
+const { getSavePathForType } = require('../services/savePathStore');
 
 const sessions = new Map();
 
@@ -32,6 +33,8 @@ function createSession(userId) {
     season: null,
     episode: null,
     corrected: null,
+    seasonCount: null,
+    scope: null,
   };
   sessions.set(id, session);
   return session;
@@ -86,6 +89,38 @@ function correctionButtons(sessionId, corrected) {
   );
 }
 
+function scopeButtons(session) {
+  const buttons = [];
+
+  buttons.push(
+    new ButtonBuilder()
+      .setCustomId(`goto:scope:${session.id}:episode`)
+      .setLabel('Download episode')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(session.episode == null),
+  );
+
+  buttons.push(
+    new ButtonBuilder()
+      .setCustomId(`goto:scope:${session.id}:season`)
+      .setLabel('Download season pack')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(session.season == null),
+  );
+
+  buttons.push(
+    new ButtonBuilder()
+      .setCustomId(`goto:scope:${session.id}:all`)
+      .setLabel(
+        session.seasonCount ? `Download all seasons (${session.seasonCount})` : 'Download all seasons (search)'
+      )
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(!session.seasonCount),
+  );
+
+  return new ActionRowBuilder().addComponents(buttons);
+}
+
 function buildSummaryEmbed(session, title = 'Search setup') {
   const embed = new EmbedBuilder().setTitle(title).setColor(0x5865f2);
 
@@ -103,10 +138,21 @@ function buildSummaryEmbed(session, title = 'Search setup') {
     embed.addFields({
       name: 'Show details',
       value:
-        session.name && session.season != null && session.episode != null
-          ? `${session.name} — S${String(session.season).padStart(2, '0')}E${String(session.episode).padStart(2, '0')}`
-          : 'Enter show name, season, and episode',
+        session.name && session.season != null
+          ? `${session.name} — S${String(session.season).padStart(2, '0')}${
+              session.episode != null ? `E${String(session.episode).padStart(2, '0')}` : ' (full season)'
+            }`
+          : 'Enter show name and season (episode optional)',
     });
+
+    embed.addFields({
+      name: 'Scope',
+      value: session.scope ? session.scope : 'Choose episode/season/all seasons',
+    });
+
+    if (session.seasonCount) {
+      embed.addFields({ name: 'Detected seasons', value: String(session.seasonCount), inline: true });
+    }
   } else if (session.type === 'movie') {
     embed.addFields({ name: 'Movie', value: session.name || 'Enter movie name' });
   }
@@ -150,6 +196,23 @@ function buildDownloadRows(token, results) {
   return rows;
 }
 
+async function promptScopeSelection(interaction, session, { useUpdate = false } = {}) {
+  const payload = {
+    content: session.seasonCount
+      ? `Detected ${session.seasonCount} season(s). Choose what to download.`
+      : 'Choose what to download.',
+    embeds: [buildSummaryEmbed(session, 'Confirm scope')],
+    components: [scopeButtons(session)],
+    flags: MessageFlags.Ephemeral,
+  };
+
+  if (useUpdate && interaction.update) {
+    await interaction.update(payload);
+  } else {
+    await interaction.reply(payload);
+  }
+}
+
 async function promptCorrection(interaction, session, correctedTitle) {
   await interaction.reply({
     content: `Did you mean **${correctedTitle}**?`,
@@ -174,7 +237,70 @@ async function runFinalSearch(interaction, session) {
   await progress.info('Preparing to build the search URL from the saved website...');
   await progress.success(`Saved website found: ${storedWebsite}`);
 
-  const searchTerm = buildSearchTerm(session.type, session.name, session.season, session.episode);
+  const qbNote = isConfigured()
+    ? ''
+    : '\n⚠️ qBittorrent is not configured yet. Use /qbittorrent before pressing download buttons.';
+
+  if (session.scope === 'all') {
+    if (!session.seasonCount || session.seasonCount < 1) {
+      await progress.fail('Could not determine how many seasons to download.');
+      return;
+    }
+
+    if (!isConfigured()) {
+      await progress.fail('qBittorrent is not configured. Use /qbittorrent before bulk season downloads.');
+      return;
+    }
+
+    const savePath = getSavePathForType('show');
+
+    for (let seasonNumber = 1; seasonNumber <= session.seasonCount; seasonNumber += 1) {
+      const searchTerm = buildSearchTerm('show', session.name, seasonNumber, null);
+      await progress.info(`Searching for season ${seasonNumber}: "${searchTerm}" at the saved site`);
+
+      const { results, searchUrl: fetchedUrl } = await runSearch(
+        searchTerm,
+        storedWebsite,
+        (step) => progress.info(step),
+        {
+          useFlareSolverr: session.useFlareSolverr,
+        },
+      );
+
+      await progress.success(`Season ${seasonNumber} search finished via ${fetchedUrl} with ${results.length} result(s).`);
+
+      if (!results.length) {
+        await progress.info(`No results found for season ${seasonNumber}. Skipping.`);
+        continue;
+      }
+
+      const best = results[0];
+      await progress.info(`Opening detail page for best season ${seasonNumber} match: "${best.name}"...`);
+      const { html, url } = await fetchDetailPage(best.detailUrl, { useFlareSolverr: session.useFlareSolverr });
+      await progress.success(`Fetched detail page from ${url}`);
+
+      const downloadUrl = extractDownloadLink(html, url);
+
+      if (!downloadUrl) {
+        await progress.info(`No download link found for season ${seasonNumber}.`);
+        continue;
+      }
+
+      if (savePath) {
+        await progress.info(`Sending to qBittorrent at path: ${savePath}`);
+      } else {
+        await progress.info('Sending to qBittorrent...');
+      }
+
+      await addTorrent(downloadUrl, { savePath });
+      await progress.success(`qBittorrent accepted the season ${seasonNumber} download.`);
+    }
+
+    await progress.complete(`Finished processing ${session.seasonCount} season(s).`);
+    return;
+  }
+
+  const searchTerm = buildSearchTerm(session.type, session.name, session.season, session.scope === 'episode' ? session.episode : null);
   await progress.info(`Using options — headless: ${session.headless}, flaresolverr: ${session.useFlareSolverr}`);
   await progress.info(`Searching for "${searchTerm}" at the saved site`);
 
@@ -183,9 +309,6 @@ async function runFinalSearch(interaction, session) {
   });
 
   await progress.success(`Search finished via ${fetchedUrl} with ${results.length} result(s).`);
-  const qbNote = isConfigured()
-    ? ''
-    : '\n⚠️ qBittorrent is not configured yet. Use /qbittorrent before pressing download buttons.';
 
   if (!results.length) {
     const content = `${progress.getSteps().join('\n')}\n\nNo matching results were found for "${searchTerm}".${qbNote}`;
@@ -274,7 +397,7 @@ module.exports = {
           .setCustomId('episode')
           .setLabel('Episode number')
           .setStyle(TextInputStyle.Short)
-          .setRequired(true);
+          .setRequired(false);
 
         modal.addComponents(new ActionRowBuilder().addComponents(nameInput), new ActionRowBuilder().addComponents(seasonInput), new ActionRowBuilder().addComponents(episodeInput));
       } else {
@@ -289,6 +412,42 @@ module.exports = {
       if (value === 'yes' && session.corrected) {
         session.name = session.corrected;
       }
+
+      session.corrected = null;
+
+      if (session.type === 'show') {
+        await promptScopeSelection(interaction, session, { useUpdate: true });
+      } else {
+        await interaction.update({ content: 'Searching with your selections...', components: [], embeds: [buildSummaryEmbed(session, 'Searching...')] });
+        await runFinalSearch(interaction, session);
+      }
+      return true;
+    }
+
+    if (step === 'scope') {
+      if (value === 'episode' && session.episode == null) {
+        await interaction.reply({
+          content: 'Episode number is required to download a single episode.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return true;
+      }
+
+      if (value === 'season' && session.season == null) {
+        await interaction.reply({ content: 'Season number is required to download a season.', flags: MessageFlags.Ephemeral });
+        return true;
+      }
+
+      if (value === 'all' && !session.seasonCount) {
+        await interaction.reply({
+          content: 'Could not detect how many seasons this show has. Please provide at least one season number.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return true;
+      }
+
+      session.scope = value === 'all' ? 'all' : value;
+
       await interaction.update({ content: 'Searching with your selections...', components: [], embeds: [buildSummaryEmbed(session, 'Searching...')] });
       await runFinalSearch(interaction, session);
       return true;
@@ -310,27 +469,46 @@ module.exports = {
     const rawName = interaction.fields.getTextInputValue('name');
     session.type = type;
     if (type === 'show') {
-      session.season = Number.parseInt(interaction.fields.getTextInputValue('season'), 10);
-      session.episode = Number.parseInt(interaction.fields.getTextInputValue('episode'), 10);
+      const parsedSeason = Number.parseInt(interaction.fields.getTextInputValue('season'), 10);
+      session.season = Number.isNaN(parsedSeason) ? null : parsedSeason;
+      const parsedEpisode = Number.parseInt(interaction.fields.getTextInputValue('episode'), 10);
+      session.episode = Number.isNaN(parsedEpisode) ? null : parsedEpisode;
     }
 
     const correction = await autocorrectTitle(rawName);
     session.name = correction.corrected;
     session.corrected = correction.corrected !== correction.original ? correction.corrected : null;
 
-    await interaction.reply({
-      content: session.corrected
-        ? `We found a possible title fix. Did you mean **${session.corrected}**?`
-        : 'Ready to search with your entry. Click below to proceed.',
-      embeds: [buildSummaryEmbed(session, 'Confirm search')],
-      components: session.corrected
-        ? [correctionButtons(session.id, session.corrected)]
-        : [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`goto:confirm:${session.id}:yes`).setLabel('Search now').setStyle(ButtonStyle.Success))],
-      flags: MessageFlags.Ephemeral,
-    });
+    if (type === 'show') {
+      session.scope = session.episode != null ? 'episode' : session.season != null ? 'season' : 'all';
+      session.seasonCount = await fetchShowSeasonCount(session.name);
 
-    if (!session.corrected) {
-      await runFinalSearch(interaction, session);
+      if (session.corrected) {
+        await interaction.reply({
+          content: `We found a possible title fix. Did you mean **${session.corrected}**?`,
+          embeds: [buildSummaryEmbed(session, 'Confirm search')],
+          components: [correctionButtons(session.id, session.corrected)],
+          flags: MessageFlags.Ephemeral,
+        });
+      } else {
+        await promptScopeSelection(interaction, session);
+      }
+    } else {
+      session.scope = 'movie';
+      await interaction.reply({
+        content: session.corrected
+          ? `We found a possible title fix. Did you mean **${session.corrected}**?`
+          : 'Ready to search with your entry. Click below to proceed.',
+        embeds: [buildSummaryEmbed(session, 'Confirm search')],
+        components: session.corrected
+          ? [correctionButtons(session.id, session.corrected)]
+          : [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`goto:confirm:${session.id}:yes`).setLabel('Search now').setStyle(ButtonStyle.Success))],
+        flags: MessageFlags.Ephemeral,
+      });
+
+      if (!session.corrected) {
+        await runFinalSearch(interaction, session);
+      }
     }
 
     return true;

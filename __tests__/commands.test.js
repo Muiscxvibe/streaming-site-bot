@@ -7,6 +7,8 @@ jest.mock('../src/services/search', () => {
   return {
     ...actual,
     runSearch: jest.fn(),
+    fetchDetailPage: jest.fn(),
+    extractDownloadLink: jest.fn(),
   };
 });
 jest.mock('../src/services/resultStore', () => ({
@@ -15,12 +17,18 @@ jest.mock('../src/services/resultStore', () => ({
 jest.mock('../src/services/qbittorrent', () => ({
   isConfigured: jest.fn(),
   setQbittorrentConfig: jest.fn(),
+  addTorrent: jest.fn(),
+}));
+jest.mock('../src/services/autocorrect', () => ({
+  autocorrectTitle: jest.fn(),
+  fetchShowSeasonCount: jest.fn(),
 }));
 
 const { setWebsite, getWebsite } = require('../src/services/websiteStore');
-const { runSearch } = require('../src/services/search');
+const { runSearch, fetchDetailPage, extractDownloadLink } = require('../src/services/search');
 const { saveResults } = require('../src/services/resultStore');
-const { isConfigured } = require('../src/services/qbittorrent');
+const { isConfigured, addTorrent } = require('../src/services/qbittorrent');
+const { autocorrectTitle, fetchShowSeasonCount } = require('../src/services/autocorrect');
 const goToCommand = require('../src/commands/go-to');
 const websiteCommand = require('../src/commands/website');
 const qbittorrentCommand = require('../src/commands/qbittorrent');
@@ -28,6 +36,10 @@ const { MessageFlags } = require('discord.js');
 
 beforeEach(() => {
   jest.clearAllMocks();
+  autocorrectTitle.mockImplementation(async (name) => ({ original: name, corrected: name, suggestion: null }));
+  fetchShowSeasonCount.mockResolvedValue(null);
+  fetchDetailPage.mockResolvedValue({ html: '<a href="magnet:?xt=urn:btih:123">magnet</a>', url: 'https://detail' });
+  extractDownloadLink.mockReturnValue('magnet:?xt=urn:btih:123');
 });
 
 describe('go-to command', () => {
@@ -93,6 +105,109 @@ describe('go-to command', () => {
 
     expect(runSearch).toHaveBeenCalled();
     expect(saveResults).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({ searchType: 'movie' }));
+  });
+
+  it('prompts scope selection and runs a season search when chosen', async () => {
+    getWebsite.mockReturnValue('https://example.com/');
+    saveResults.mockReturnValue('token-123');
+    isConfigured.mockReturnValue(true);
+    runSearch.mockResolvedValue({
+      results: [
+        { name: 'Season pack', quality: '720p', sizeText: '1 GB', health: 100, detailUrl: 'https://detail/season' },
+      ],
+      searchUrl: 'https://example.com/search/all/show-s02/',
+    });
+
+    const reply = jest.fn();
+    const editReply = jest.fn();
+    const update = jest.fn();
+    fetchShowSeasonCount.mockResolvedValue(3);
+
+    await goToCommand.execute({ user: { id: 'user1' }, reply });
+    const sessionId = [...goToCommand.__sessionStore.keys()].at(-1);
+    const session = goToCommand.__sessionStore.get(sessionId);
+    session.headless = false;
+    session.useFlareSolverr = false;
+
+    await goToCommand.handleModal({
+      customId: `goto-modal:show:${sessionId}`,
+      fields: {
+        getTextInputValue: (name) => {
+          if (name === 'name') return 'South Park';
+          if (name === 'season') return '2';
+          if (name === 'episode') return '';
+          return '';
+        },
+      },
+      user: { id: 'user1' },
+      reply,
+      editReply,
+    });
+
+    const scopePayload = reply.mock.calls.at(-1)[0];
+    expect(scopePayload.components[0].components[1].data.custom_id).toContain('goto:scope');
+
+    await goToCommand.handleButton({
+      customId: `goto:scope:${sessionId}:season`,
+      update,
+      user: { id: 'user1' },
+      reply,
+      editReply,
+    });
+
+    expect(runSearch).toHaveBeenCalled();
+  });
+
+  it('downloads top results for all detected seasons when requested', async () => {
+    getWebsite.mockReturnValue('https://example.com/');
+    isConfigured.mockReturnValue(true);
+    fetchShowSeasonCount.mockResolvedValue(2);
+
+    runSearch
+      .mockResolvedValueOnce({
+        results: [{ name: 'S1 pack', detailUrl: 'https://detail/s1' }],
+        searchUrl: 'https://example.com/search/all/show-s01/',
+      })
+      .mockResolvedValueOnce({
+        results: [{ name: 'S2 pack', detailUrl: 'https://detail/s2' }],
+        searchUrl: 'https://example.com/search/all/show-s02/',
+      });
+
+    const reply = jest.fn();
+    const editReply = jest.fn();
+    const update = jest.fn();
+
+    await goToCommand.execute({ user: { id: 'user1' }, reply });
+    const sessionId = [...goToCommand.__sessionStore.keys()].at(-1);
+    const session = goToCommand.__sessionStore.get(sessionId);
+    session.headless = false;
+    session.useFlareSolverr = false;
+
+    await goToCommand.handleModal({
+      customId: `goto-modal:show:${sessionId}`,
+      fields: {
+        getTextInputValue: (name) => {
+          if (name === 'name') return 'Some Show';
+          if (name === 'season') return '1';
+          if (name === 'episode') return '';
+          return '';
+        },
+      },
+      user: { id: 'user1' },
+      reply,
+      editReply,
+    });
+
+    await goToCommand.handleButton({
+      customId: `goto:scope:${sessionId}:all`,
+      update,
+      user: { id: 'user1' },
+      reply,
+      editReply,
+    });
+
+    expect(runSearch).toHaveBeenCalledTimes(2);
+    expect(addTorrent).toHaveBeenCalledTimes(2);
   });
 });
 
