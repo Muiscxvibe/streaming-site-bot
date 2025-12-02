@@ -101,9 +101,9 @@ function formatResults(results, term) {
   });
 
   return [
-    'Top matches ordered by health, quality, then smaller sizes:',
+    'Top matches ordered by size (smallest first), quality, then health:',
     ...lines,
-    'Results are ordered best to worst based on health, quality, and reasonable size.',
+    'Results are ordered best to worst based on smallest size, highest quality, then strongest health.',
   ].join('\n');
 }
 
@@ -166,11 +166,11 @@ function sortResults(results) {
   return results
     .slice()
     .sort((a, b) => {
-      if (b.health !== a.health) return b.health - a.health;
+      if (a.sizeMb != null && b.sizeMb != null && a.sizeMb !== b.sizeMb) return a.sizeMb - b.sizeMb;
+      if (a.sizeMb != null && b.sizeMb == null) return -1;
+      if (a.sizeMb == null && b.sizeMb != null) return 1;
       if (a.qualityRank !== b.qualityRank) return a.qualityRank - b.qualityRank;
-      if (a.sizeMb != null && b.sizeMb != null) return a.sizeMb - b.sizeMb;
-      if (a.sizeMb != null) return -1;
-      if (b.sizeMb != null) return 1;
+      if (b.health !== a.health) return b.health - a.health;
       return 0;
     })
     .filter((result) => result.name);

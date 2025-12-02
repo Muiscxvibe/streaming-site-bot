@@ -71,7 +71,7 @@ describe('runSearch', () => {
 
     expect(searchUrl).toBe('https://example.com/search/all/show-s01e01/');
     expect(fetchWithFallback).toHaveBeenCalled();
-    expect(results[0].name).toContain('1080p');
+    expect(results[0].name).toContain('720p');
   });
 
   it('fetches via flaresolverr when requested', async () => {

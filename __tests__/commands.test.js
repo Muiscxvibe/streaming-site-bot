@@ -31,139 +31,68 @@ beforeEach(() => {
 });
 
 describe('go-to command', () => {
-  it('runs a search using the stored site and lists formatted results', async () => {
-    const deferReply = jest.fn();
-    const editReply = jest.fn();
+  it('starts an interactive session with headless buttons', async () => {
+    const reply = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
-    saveResults.mockReturnValue('token-123');
-    isConfigured.mockReturnValue(true);
-
-    runSearch.mockResolvedValue({
-      results: [
-        {
-          name: 'Example s01e01',
-          quality: '1080p',
-          sizeText: '1.4 GB',
-          health: 150,
-          detailUrl: 'https://example.com/example.torrent',
-        },
-        {
-          name: 'Example s01e01 720p',
-          quality: '720p',
-          sizeText: '900 MB',
-          health: 120,
-          detailUrl: 'https://example.com/example2.torrent',
-        },
-      ],
-      searchUrl: 'https://example.com/search/all/example-s01e01/',
-    });
-
-    const options = {
-      getBoolean: jest.fn((name) => {
-        if (name === 'use-flaresolverr') return false;
-        if (name === 'headless') return false;
-        return null;
-      }),
-      getString: jest.fn((name) => {
-        if (name === 'type') return 'show';
-        if (name === 'name') return 'Example';
-        return null;
-      }),
-      getInteger: jest.fn((name) => {
-        if (name === 'season') return 1;
-        if (name === 'episode') return 1;
-        return null;
-      }),
-    };
-
-    await goToCommand.execute({ deferReply, editReply, options });
-
-    expect(runSearch).toHaveBeenCalledWith(
-      'Example s01e01',
-      'https://example.com/',
-      expect.any(Function),
-      { useFlareSolverr: false },
-    );
-    const finalMessage = editReply.mock.calls.at(-1)[0];
-    const embed = finalMessage.embeds[0].data || finalMessage.embeds[0];
-
-    expect(finalMessage.content).toContain('Showing the best matches below.');
-    expect(embed.description).toContain('Example s01e01');
-    expect(embed.fields).toHaveLength(2);
-    expect(finalMessage.components[0].components).toHaveLength(2);
-    expect(saveResults).toHaveBeenCalled();
-  });
-
-  it('passes the flaresolverr option through to the search service', async () => {
-    const deferReply = jest.fn();
-    const editReply = jest.fn();
-    getWebsite.mockReturnValue('https://example.com/');
-    saveResults.mockReturnValue('token-123');
-    isConfigured.mockReturnValue(false);
-
-    runSearch.mockResolvedValue({ results: [], searchUrl: 'https://example.com/search/all/example/' });
-
-    const options = {
-      getBoolean: jest.fn((name) => (name === 'use-flaresolverr' ? true : null)),
-      getString: jest.fn((name) => {
-        if (name === 'type') return 'movie';
-        if (name === 'name') return 'Example';
-        return null;
-      }),
-      getInteger: jest.fn().mockReturnValue(null),
-    };
-
-    await goToCommand.execute({ deferReply, editReply, options });
-
-    expect(runSearch).toHaveBeenCalledWith(
-      'Example',
-      'https://example.com/',
-      expect.any(Function),
-      { useFlareSolverr: true },
-    );
-    expect(editReply.mock.calls.at(-1)[0].content).toContain('No matching results were found for "Example".');
-  });
-
-  it('informs users when no site is saved', async () => {
-    const deferReply = jest.fn();
-    const editReply = jest.fn();
-    getWebsite.mockReturnValue(null);
-    const interaction = {
-      deferReply,
-      editReply,
-      options: {
-        getBoolean: jest.fn().mockReturnValue(null),
-        getString: jest.fn().mockReturnValue(null),
-        getInteger: jest.fn().mockReturnValue(null),
-      },
-    };
+    const interaction = { user: { id: 'user1' }, reply };
 
     await goToCommand.execute(interaction);
 
-    expect(runSearch).not.toHaveBeenCalled();
-    expect(deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
-    expect(editReply.mock.calls.at(-1)[0]).toContain('No website saved yet. Use /website to set one first.');
+    const call = reply.mock.calls[0][0];
+    expect(call.content).toContain('Select headless mode');
+    expect(call.components[0].components[0].data.custom_id).toContain('goto:headless');
   });
 
-  it('validates show requirements when searching', async () => {
-    const deferReply = jest.fn();
-    const editReply = jest.fn();
+  it('advances to flaresolverr choice when headless is selected', async () => {
+    const reply = jest.fn();
+    const update = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
+    const interaction = { user: { id: 'user1' }, reply };
+    await goToCommand.execute(interaction);
 
-    const options = {
-      getBoolean: jest.fn().mockReturnValue(null),
-      getString: jest.fn((name) => {
-        if (name === 'type') return 'show';
-        if (name === 'name') return 'Example Show';
-        return null;
-      }),
-      getInteger: jest.fn().mockReturnValue(null),
-    };
+    const sessionId = [...goToCommand.__sessionStore.keys()].at(-1);
+    await goToCommand.handleButton({
+      customId: `goto:headless:${sessionId}:true`,
+      update,
+      user: { id: 'user1' },
+      reply,
+    });
 
-    await goToCommand.execute({ deferReply, editReply, options });
+    expect(update).toHaveBeenCalled();
+    const payload = update.mock.calls[0][0];
+    expect(payload.components[0].components[0].data.custom_id).toContain('goto:flaresolverr');
+  });
 
-    expect(runSearch).not.toHaveBeenCalled();
-    expect(editReply.mock.calls.at(-1)[0]).toContain('Season and episode are required for shows.');
+  it('runs a movie search after modal submission without correction', async () => {
+    getWebsite.mockReturnValue('https://example.com/');
+    saveResults.mockReturnValue('token-123');
+    isConfigured.mockReturnValue(true);
+    runSearch.mockResolvedValue({
+      results: [
+        { name: 'Movie', quality: '720p', sizeText: '700 MB', health: 100, detailUrl: 'https://detail' },
+      ],
+      searchUrl: 'https://example.com/search/all/movie/',
+    });
+
+    const reply = jest.fn();
+    const editReply = jest.fn();
+    const interaction = { user: { id: 'user1' }, reply };
+    await goToCommand.execute(interaction);
+    const sessionId = [...goToCommand.__sessionStore.keys()].at(-1);
+    const session = goToCommand.__sessionStore.get(sessionId);
+    session.headless = false;
+    session.useFlareSolverr = false;
+
+    await goToCommand.handleModal({
+      customId: `goto-modal:movie:${sessionId}`,
+      fields: { getTextInputValue: (name) => (name === 'name' ? 'Moive' : '') },
+      user: { id: 'user1' },
+      reply,
+      editReply,
+    });
+
+    expect(runSearch).toHaveBeenCalled();
+    expect(saveResults).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({ searchType: 'movie' }));
   });
 });
 

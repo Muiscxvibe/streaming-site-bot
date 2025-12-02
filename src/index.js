@@ -20,6 +20,7 @@ const { createProgressTracker } = require('./services/progress');
 const { fetchDetailPage, extractDownloadLink } = require('./services/search');
 const { addTorrent, isConfigured } = require('./services/qbittorrent');
 const { getSavePathForType } = require('./services/savePathStore');
+const goToCommand = require('./commands/go-to');
 
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith('.js'));
@@ -73,6 +74,11 @@ client.once(Events.ClientReady, async (readyClient) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isButton()) {
+    if (interaction.customId.startsWith('goto:')) {
+      await goToCommand.handleButton(interaction);
+      return;
+    }
+
     if (!interaction.customId.startsWith('download:')) return;
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -137,6 +143,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await progress.fail(`Could not start download: ${error.message}`);
     }
 
+    return;
+  }
+
+  if (interaction.isModalSubmit()) {
+    await goToCommand.handleModal(interaction);
     return;
   }
 
