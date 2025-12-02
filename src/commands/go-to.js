@@ -18,6 +18,7 @@ const { isConfigured, addTorrent } = require('../services/qbittorrent');
 const { createProgressTracker } = require('../services/progress');
 const { autocorrectTitle, fetchShowSeasonCount } = require('../services/autocorrect');
 const { getSavePathForType } = require('../services/savePathStore');
+const { startDownloadProgress } = require('../services/downloadProgress');
 
 const sessions = new Map();
 
@@ -26,8 +27,6 @@ function createSession(userId) {
   const session = {
     id,
     userId,
-    headless: null,
-    useFlareSolverr: null,
     type: null,
     name: null,
     season: null,
@@ -35,6 +34,7 @@ function createSession(userId) {
     corrected: null,
     seasonCount: null,
     scope: null,
+    requestedAllSeasons: false,
   };
   sessions.set(id, session);
   return session;
@@ -53,26 +53,6 @@ function ensureSessionOwner(interaction, session) {
     return false;
   }
   return true;
-}
-
-function headlessButtons(sessionId) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`goto:headless:${sessionId}:true`).setLabel('Headless: true').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`goto:headless:${sessionId}:false`).setLabel('Headless: false').setStyle(ButtonStyle.Secondary),
-  );
-}
-
-function flaresolverrButtons(sessionId) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`goto:flaresolverr:${sessionId}:true`)
-      .setLabel('Use FlareSolverr: true')
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId(`goto:flaresolverr:${sessionId}:false`)
-      .setLabel('Use FlareSolverr: false')
-      .setStyle(ButtonStyle.Secondary),
-  );
 }
 
 function mediaTypeButtons(sessionId) {
@@ -124,23 +104,19 @@ function scopeButtons(session) {
 function buildSummaryEmbed(session, title = 'Search setup') {
   const embed = new EmbedBuilder().setTitle(title).setColor(0x5865f2);
 
-  embed.addFields(
-    { name: 'Headless', value: session.headless === null ? 'Choose an option' : String(session.headless), inline: true },
-    {
-      name: 'Use FlareSolverr',
-      value: session.useFlareSolverr === null ? 'Choose an option' : String(session.useFlareSolverr),
-      inline: true,
-    },
-    { name: 'Type', value: session.type || 'Select media type', inline: true },
-  );
+  embed.addFields({ name: 'Type', value: session.type || 'Select media type', inline: true });
 
   if (session.type === 'show') {
     embed.addFields({
       name: 'Show details',
       value:
-        session.name && session.season != null
-          ? `${session.name} — S${String(session.season).padStart(2, '0')}${
-              session.episode != null ? `E${String(session.episode).padStart(2, '0')}` : ' (full season)'
+        session.name && (session.requestedAllSeasons || session.season != null)
+          ? `${session.name} — ${
+              session.requestedAllSeasons
+                ? 'All seasons'
+                : `S${String(session.season).padStart(2, '0')}${
+                    session.episode != null ? `E${String(session.episode).padStart(2, '0')}` : ' (full season)'
+                  }`
             }`
           : 'Enter show name and season (episode optional)',
     });
@@ -263,7 +239,7 @@ async function runFinalSearch(interaction, session) {
         storedWebsite,
         (step) => progress.info(step),
         {
-          useFlareSolverr: session.useFlareSolverr,
+          useFlareSolverr: false,
         },
       );
 
@@ -276,7 +252,7 @@ async function runFinalSearch(interaction, session) {
 
       const best = results[0];
       await progress.info(`Opening detail page for best season ${seasonNumber} match: "${best.name}"...`);
-      const { html, url } = await fetchDetailPage(best.detailUrl, { useFlareSolverr: session.useFlareSolverr });
+      const { html, url } = await fetchDetailPage(best.detailUrl, { useFlareSolverr: false });
       await progress.success(`Fetched detail page from ${url}`);
 
       const downloadUrl = extractDownloadLink(html, url);
@@ -292,8 +268,10 @@ async function runFinalSearch(interaction, session) {
         await progress.info('Sending to qBittorrent...');
       }
 
-      await addTorrent(downloadUrl, { savePath });
+      const tag = `goto-${session.id}-s${seasonNumber}`;
+      await addTorrent(downloadUrl, { savePath, tag });
       await progress.success(`qBittorrent accepted the season ${seasonNumber} download.`);
+      await startDownloadProgress(interaction, { tag, displayName: `${session.name} — Season ${seasonNumber}` });
     }
 
     await progress.complete(`Finished processing ${session.seasonCount} season(s).`);
@@ -301,11 +279,10 @@ async function runFinalSearch(interaction, session) {
   }
 
   const searchTerm = buildSearchTerm(session.type, session.name, session.season, session.scope === 'episode' ? session.episode : null);
-  await progress.info(`Using options — headless: ${session.headless}, flaresolverr: ${session.useFlareSolverr}`);
   await progress.info(`Searching for "${searchTerm}" at the saved site`);
 
   const { results, searchUrl: fetchedUrl } = await runSearch(searchTerm, storedWebsite, (step) => progress.info(step), {
-    useFlareSolverr: session.useFlareSolverr,
+    useFlareSolverr: false,
   });
 
   await progress.success(`Search finished via ${fetchedUrl} with ${results.length} result(s).`);
@@ -317,7 +294,7 @@ async function runFinalSearch(interaction, session) {
   }
 
   const token = saveResults(results, {
-    useFlareSolverr: session.useFlareSolverr,
+    useFlareSolverr: false,
     baseUrl: storedWebsite,
     searchType: session.type,
   });
@@ -337,10 +314,10 @@ module.exports = {
     const session = createSession(interaction.user.id);
     await interaction.reply({
       content: storedWebsite
-        ? 'Select headless mode to begin your interactive search.'
+        ? 'Select a media type to begin your interactive search.'
         : 'No website saved yet. Use /website to set one first.',
       embeds: [buildSummaryEmbed(session)],
-      components: [headlessButtons(session.id)],
+      components: storedWebsite ? [mediaTypeButtons(session.id)] : [],
       flags: MessageFlags.Ephemeral,
     });
   },
@@ -354,26 +331,6 @@ module.exports = {
       return true;
     }
     if (!ensureSessionOwner(interaction, session)) return true;
-
-    if (step === 'headless') {
-      session.headless = value === 'true';
-      await interaction.update({
-        content: 'Choose whether to use FlareSolverr.',
-        embeds: [buildSummaryEmbed(session)],
-        components: [flaresolverrButtons(session.id)],
-      });
-      return true;
-    }
-
-    if (step === 'flaresolverr') {
-      session.useFlareSolverr = value === 'true';
-      await interaction.update({
-        content: 'Select the media type to continue.',
-        embeds: [buildSummaryEmbed(session)],
-        components: [mediaTypeButtons(session.id)],
-      });
-      return true;
-    }
 
     if (step === 'type') {
       session.type = value;
@@ -416,7 +373,16 @@ module.exports = {
       session.corrected = null;
 
       if (session.type === 'show') {
-        await promptScopeSelection(interaction, session, { useUpdate: true });
+        if (session.requestedAllSeasons) {
+          await interaction.update({
+            content: 'Downloading all detected seasons with your selections...',
+            components: [],
+            embeds: [buildSummaryEmbed(session, 'Searching...')],
+          });
+          await runFinalSearch(interaction, session);
+        } else {
+          await promptScopeSelection(interaction, session, { useUpdate: true });
+        }
       } else {
         await interaction.update({ content: 'Searching with your selections...', components: [], embeds: [buildSummaryEmbed(session, 'Searching...')] });
         await runFinalSearch(interaction, session);
@@ -469,10 +435,21 @@ module.exports = {
     const rawName = interaction.fields.getTextInputValue('name');
     session.type = type;
     if (type === 'show') {
-      const parsedSeason = Number.parseInt(interaction.fields.getTextInputValue('season'), 10);
-      session.season = Number.isNaN(parsedSeason) ? null : parsedSeason;
+      const rawSeason = interaction.fields.getTextInputValue('season');
+      const parsedSeason = Number.parseInt(rawSeason, 10);
+      const requestedAll = rawSeason.trim().toLowerCase() === 'all';
+      session.requestedAllSeasons = requestedAll;
+      session.season = requestedAll || Number.isNaN(parsedSeason) ? null : parsedSeason;
       const parsedEpisode = Number.parseInt(interaction.fields.getTextInputValue('episode'), 10);
       session.episode = Number.isNaN(parsedEpisode) ? null : parsedEpisode;
+
+      if (!requestedAll && session.season == null) {
+        await interaction.reply({
+          content: 'Please provide a season number or "all" to continue.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return true;
+      }
     }
 
     const correction = await autocorrectTitle(rawName);
@@ -480,7 +457,13 @@ module.exports = {
     session.corrected = correction.corrected !== correction.original ? correction.corrected : null;
 
     if (type === 'show') {
-      session.scope = session.episode != null ? 'episode' : session.season != null ? 'season' : 'all';
+      session.scope = session.requestedAllSeasons
+        ? 'all'
+        : session.episode != null
+          ? 'episode'
+          : session.season != null
+            ? 'season'
+            : 'all';
       session.seasonCount = await fetchShowSeasonCount(session.name);
 
       if (session.corrected) {
@@ -491,7 +474,17 @@ module.exports = {
           flags: MessageFlags.Ephemeral,
         });
       } else {
-        await promptScopeSelection(interaction, session);
+        if (session.requestedAllSeasons) {
+          await interaction.reply({
+            content: 'Downloading all detected seasons with your selections...',
+            embeds: [buildSummaryEmbed(session, 'Searching...')],
+            components: [],
+            flags: MessageFlags.Ephemeral,
+          });
+          await runFinalSearch(interaction, session);
+        } else {
+          await promptScopeSelection(interaction, session);
+        }
       }
     } else {
       session.scope = 'movie';

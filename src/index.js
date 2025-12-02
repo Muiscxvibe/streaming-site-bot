@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { randomUUID } = require('node:crypto');
 const { Client, Collection, Events, GatewayIntentBits, MessageFlags } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
@@ -21,6 +22,7 @@ const { fetchDetailPage, extractDownloadLink } = require('./services/search');
 const { addTorrent, isConfigured } = require('./services/qbittorrent');
 const { getSavePathForType } = require('./services/savePathStore');
 const goToCommand = require('./commands/go-to');
+const { startDownloadProgress } = require('./services/downloadProgress');
 
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith('.js'));
@@ -133,9 +135,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await progress.info('Sending to qBittorrent...');
       }
 
-      await addTorrent(downloadUrl, { savePath });
+      const tag = `goto-${randomUUID()}`;
+      await addTorrent(downloadUrl, { savePath, tag });
       await progress.success('qBittorrent accepted the download.');
       await progress.complete(`🚀 Now downloading: ${result.name}`);
+      await startDownloadProgress(interaction, { tag, displayName: result.name });
 
       clearToken(token);
     } catch (error) {

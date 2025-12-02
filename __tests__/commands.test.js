@@ -23,12 +23,16 @@ jest.mock('../src/services/autocorrect', () => ({
   autocorrectTitle: jest.fn(),
   fetchShowSeasonCount: jest.fn(),
 }));
+jest.mock('../src/services/downloadProgress', () => ({
+  startDownloadProgress: jest.fn(),
+}));
 
 const { setWebsite, getWebsite } = require('../src/services/websiteStore');
 const { runSearch, fetchDetailPage, extractDownloadLink } = require('../src/services/search');
 const { saveResults } = require('../src/services/resultStore');
 const { isConfigured, addTorrent } = require('../src/services/qbittorrent');
 const { autocorrectTitle, fetchShowSeasonCount } = require('../src/services/autocorrect');
+const { startDownloadProgress } = require('../src/services/downloadProgress');
 const goToCommand = require('../src/commands/go-to');
 const websiteCommand = require('../src/commands/website');
 const qbittorrentCommand = require('../src/commands/qbittorrent');
@@ -43,7 +47,7 @@ beforeEach(() => {
 });
 
 describe('go-to command', () => {
-  it('starts an interactive session with headless buttons', async () => {
+  it('starts an interactive session with media type buttons', async () => {
     const reply = jest.fn();
     getWebsite.mockReturnValue('https://example.com/');
     const interaction = { user: { id: 'user1' }, reply };
@@ -51,28 +55,8 @@ describe('go-to command', () => {
     await goToCommand.execute(interaction);
 
     const call = reply.mock.calls[0][0];
-    expect(call.content).toContain('Select headless mode');
-    expect(call.components[0].components[0].data.custom_id).toContain('goto:headless');
-  });
-
-  it('advances to flaresolverr choice when headless is selected', async () => {
-    const reply = jest.fn();
-    const update = jest.fn();
-    getWebsite.mockReturnValue('https://example.com/');
-    const interaction = { user: { id: 'user1' }, reply };
-    await goToCommand.execute(interaction);
-
-    const sessionId = [...goToCommand.__sessionStore.keys()].at(-1);
-    await goToCommand.handleButton({
-      customId: `goto:headless:${sessionId}:true`,
-      update,
-      user: { id: 'user1' },
-      reply,
-    });
-
-    expect(update).toHaveBeenCalled();
-    const payload = update.mock.calls[0][0];
-    expect(payload.components[0].components[0].data.custom_id).toContain('goto:flaresolverr');
+    expect(call.content).toContain('Select a media type');
+    expect(call.components[0].components[0].data.custom_id).toContain('goto:type');
   });
 
   it('runs a movie search after modal submission without correction', async () => {
@@ -91,9 +75,6 @@ describe('go-to command', () => {
     const interaction = { user: { id: 'user1' }, reply };
     await goToCommand.execute(interaction);
     const sessionId = [...goToCommand.__sessionStore.keys()].at(-1);
-    const session = goToCommand.__sessionStore.get(sessionId);
-    session.headless = false;
-    session.useFlareSolverr = false;
 
     await goToCommand.handleModal({
       customId: `goto-modal:movie:${sessionId}`,
@@ -125,9 +106,6 @@ describe('go-to command', () => {
 
     await goToCommand.execute({ user: { id: 'user1' }, reply });
     const sessionId = [...goToCommand.__sessionStore.keys()].at(-1);
-    const session = goToCommand.__sessionStore.get(sessionId);
-    session.headless = false;
-    session.useFlareSolverr = false;
 
     await goToCommand.handleModal({
       customId: `goto-modal:show:${sessionId}`,
@@ -179,16 +157,13 @@ describe('go-to command', () => {
 
     await goToCommand.execute({ user: { id: 'user1' }, reply });
     const sessionId = [...goToCommand.__sessionStore.keys()].at(-1);
-    const session = goToCommand.__sessionStore.get(sessionId);
-    session.headless = false;
-    session.useFlareSolverr = false;
 
     await goToCommand.handleModal({
       customId: `goto-modal:show:${sessionId}`,
       fields: {
         getTextInputValue: (name) => {
           if (name === 'name') return 'Some Show';
-          if (name === 'season') return '1';
+          if (name === 'season') return 'all';
           if (name === 'episode') return '';
           return '';
         },
@@ -198,16 +173,9 @@ describe('go-to command', () => {
       editReply,
     });
 
-    await goToCommand.handleButton({
-      customId: `goto:scope:${sessionId}:all`,
-      update,
-      user: { id: 'user1' },
-      reply,
-      editReply,
-    });
-
     expect(runSearch).toHaveBeenCalledTimes(2);
     expect(addTorrent).toHaveBeenCalledTimes(2);
+    expect(startDownloadProgress).toHaveBeenCalledTimes(2);
   });
 });
 
