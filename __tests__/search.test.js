@@ -75,7 +75,7 @@ describe('runSearch', () => {
 
     expect(searchUrl).toBe('https://example.com/search/all/show-s01e01/');
     expect(fetchWithFallback).toHaveBeenCalled();
-    expect(results[0].name).toContain('720p');
+    expect(results[0].name).toContain('1080p');
   });
 
   it('fetches via flaresolverr when requested', async () => {
@@ -125,6 +125,33 @@ describe('runSearch', () => {
     const download = extractDownloadLink('', torrentUrl);
 
     expect(download).toBe(torrentUrl);
+  });
+
+  it('filters out results below 720p and orders by health then size', async () => {
+    const customHtml = `
+      <html>
+        <body>
+          <table>
+            <tbody>
+              <tr><td>Low quality 480p</td><td>700 MB</td><td>999</td></tr>
+              <tr><td>Show 1080p</td><td>2 GB</td><td>300</td></tr>
+              <tr><td>Show 720p smaller</td><td>900 MB</td><td>300</td></tr>
+              <tr><td>Show 720p larger</td><td>1.5 GB</td><td>300</td></tr>
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    fetchWithFallback.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve(customHtml) });
+
+    const { results } = await runSearch('Show s01', 'https://example.com');
+
+    expect(results).toHaveLength(3);
+    expect(results.map((r) => r.name)).not.toEqual(expect.arrayContaining(['Low quality 480p']));
+    expect(results[0].name).toContain('Show 1080p');
+    expect(results[1].name).toContain('Show 720p smaller');
+    expect(results[2].name).toContain('Show 720p larger');
   });
 
   it('falls back to any torrent link when selectors miss', () => {

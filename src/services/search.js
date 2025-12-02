@@ -18,6 +18,7 @@ const DOWNLOAD_LINK_SELECTORS = [
 ];
 
 const QUALITY_ORDER = ['2160p', '1440p', '1080p', '720p', '480p', '360p'];
+const MIN_QUALITY_INDEX = QUALITY_ORDER.indexOf('720p');
 
 async function fetchPageHtml(targetUrl) {
   const url = ensureUrl(targetUrl);
@@ -106,9 +107,9 @@ function formatResults(results, term) {
   });
 
   return [
-    'Top matches ordered by size (smallest first), quality, then health:',
+    'Top matches filtered to 720p+ and ordered by health, then smallest sizes:',
     ...lines,
-    'Results are ordered best to worst based on smallest size, highest quality, then strongest health.',
+    'Results are filtered to 720p or higher and ranked by strongest health, then smaller sizes.',
   ].join('\n');
 }
 
@@ -169,16 +170,19 @@ function normalizeResults(rawRows) {
 
 function sortResults(results) {
   return results
-    .slice()
+    .filter((result) =>
+      result.name &&
+      result.quality &&
+      result.qualityRank !== Number.POSITIVE_INFINITY &&
+      result.qualityRank <= MIN_QUALITY_INDEX,
+    )
     .sort((a, b) => {
+      if (b.health !== a.health) return b.health - a.health;
       if (a.sizeMb != null && b.sizeMb != null && a.sizeMb !== b.sizeMb) return a.sizeMb - b.sizeMb;
       if (a.sizeMb != null && b.sizeMb == null) return -1;
       if (a.sizeMb == null && b.sizeMb != null) return 1;
-      if (a.qualityRank !== b.qualityRank) return a.qualityRank - b.qualityRank;
-      if (b.health !== a.health) return b.health - a.health;
       return 0;
-    })
-    .filter((result) => result.name);
+    });
 }
 
 function extractRowsFromHtml(html, baseUrl) {

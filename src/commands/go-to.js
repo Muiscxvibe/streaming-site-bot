@@ -155,7 +155,7 @@ function buildResultEmbed(searchTerm, results) {
         };
       }),
     )
-    .setFooter({ text: 'Ordered by smallest size, then quality, then health.' });
+    .setFooter({ text: 'Filtered to 720p+; ordered by strongest health, then smaller sizes.' });
 }
 
 function buildDownloadRows(token, results) {
