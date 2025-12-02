@@ -198,6 +198,45 @@ async function promptCorrection(interaction, session, correctedTitle) {
   });
 }
 
+async function resolveSeasonCount(session, storedWebsite, progress) {
+  if (session.seasonCount && session.seasonCount > 0) {
+    return session.seasonCount;
+  }
+
+  await progress.info('Detecting how many seasons are available...');
+  const googleCount = await fetchShowSeasonCount(session.name);
+
+  if (googleCount && googleCount > 0) {
+    session.seasonCount = googleCount;
+    await progress.success(`Detected ${googleCount} season(s) via Google.`);
+    return googleCount;
+  }
+
+  await progress.info('Season count unknown. Probing the site season by season...');
+  let discovered = 0;
+
+  for (let seasonNumber = 1; seasonNumber <= 20; seasonNumber += 1) {
+    const searchTerm = buildSearchTerm('show', session.name, seasonNumber, null);
+    const { results } = await runSearch(searchTerm, storedWebsite, () => {}, { useFlareSolverr: false });
+
+    if (results.length) {
+      discovered = seasonNumber;
+      await progress.info(`Found matches for season ${seasonNumber} while probing.`);
+    } else if (discovered > 0) {
+      break;
+    }
+  }
+
+  if (discovered > 0) {
+    session.seasonCount = discovered;
+    await progress.success(`Detected ${discovered} season(s) by probing search results.`);
+    return discovered;
+  }
+
+  await progress.info('Could not determine season count after probing.');
+  return null;
+}
+
 async function runFinalSearch(interaction, session) {
   const storedWebsite = getWebsite();
 
@@ -218,7 +257,9 @@ async function runFinalSearch(interaction, session) {
     : '\n⚠️ qBittorrent is not configured yet. Use /qbittorrent before pressing download buttons.';
 
   if (session.scope === 'all') {
-    if (!session.seasonCount || session.seasonCount < 1) {
+    const resolvedCount = await resolveSeasonCount(session, storedWebsite, progress);
+
+    if (!resolvedCount || resolvedCount < 1) {
       await progress.fail('Could not determine how many seasons to download.');
       return;
     }
@@ -230,7 +271,7 @@ async function runFinalSearch(interaction, session) {
 
     const savePath = getSavePathForType('show');
 
-    for (let seasonNumber = 1; seasonNumber <= session.seasonCount; seasonNumber += 1) {
+    for (let seasonNumber = 1; seasonNumber <= resolvedCount; seasonNumber += 1) {
       const searchTerm = buildSearchTerm('show', session.name, seasonNumber, null);
       await progress.info(`Searching for season ${seasonNumber}: "${searchTerm}" at the saved site`);
 
@@ -274,7 +315,7 @@ async function runFinalSearch(interaction, session) {
       await startDownloadProgress(interaction, { tag, displayName: `${session.name} — Season ${seasonNumber}` });
     }
 
-    await progress.complete(`Finished processing ${session.seasonCount} season(s).`);
+    await progress.complete(`Finished processing ${resolvedCount} season(s).`);
     return;
   }
 

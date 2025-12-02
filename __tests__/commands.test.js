@@ -177,6 +177,64 @@ describe('go-to command', () => {
     expect(addTorrent).toHaveBeenCalledTimes(2);
     expect(startDownloadProgress).toHaveBeenCalledTimes(2);
   });
+
+  it('probes season count when Google lookup fails and still downloads all', async () => {
+    getWebsite.mockReturnValue('https://example.com/');
+    isConfigured.mockReturnValue(true);
+    fetchShowSeasonCount.mockResolvedValue(null);
+
+    runSearch
+      .mockResolvedValueOnce({
+        // probe season 1
+        results: [{ name: 'S1 pack probe', detailUrl: 'https://detail/probe-s1' }],
+        searchUrl: 'https://example.com/search/all/show-s01/',
+      })
+      .mockResolvedValueOnce({
+        // probe season 2
+        results: [{ name: 'S2 pack probe', detailUrl: 'https://detail/probe-s2' }],
+        searchUrl: 'https://example.com/search/all/show-s02/',
+      })
+      .mockResolvedValueOnce({
+        // probe season 3 (none found, stop probing)
+        results: [],
+        searchUrl: 'https://example.com/search/all/show-s03/',
+      })
+      .mockResolvedValueOnce({
+        // actual download for season 1
+        results: [{ name: 'S1 pack', detailUrl: 'https://detail/s1' }],
+        searchUrl: 'https://example.com/search/all/show-s01/',
+      })
+      .mockResolvedValueOnce({
+        // actual download for season 2
+        results: [{ name: 'S2 pack', detailUrl: 'https://detail/s2' }],
+        searchUrl: 'https://example.com/search/all/show-s02/',
+      });
+
+    const reply = jest.fn();
+    const editReply = jest.fn();
+
+    await goToCommand.execute({ user: { id: 'user1' }, reply });
+    const sessionId = [...goToCommand.__sessionStore.keys()].at(-1);
+
+    await goToCommand.handleModal({
+      customId: `goto-modal:show:${sessionId}`,
+      fields: {
+        getTextInputValue: (name) => {
+          if (name === 'name') return 'Probe Show';
+          if (name === 'season') return 'all';
+          if (name === 'episode') return '';
+          return '';
+        },
+      },
+      user: { id: 'user1' },
+      reply,
+      editReply,
+    });
+
+    expect(runSearch).toHaveBeenCalledTimes(5);
+    expect(addTorrent).toHaveBeenCalledTimes(2);
+    expect(startDownloadProgress).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('website command', () => {
