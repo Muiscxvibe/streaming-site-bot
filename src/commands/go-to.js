@@ -29,6 +29,7 @@ function createSession(userId) {
     userId,
     type: null,
     name: null,
+    originalName: null,
     season: null,
     episode: null,
     corrected: null,
@@ -409,6 +410,10 @@ module.exports = {
     if (step === 'confirm') {
       if (value === 'yes' && session.corrected) {
         session.name = session.corrected;
+        session.seasonCount = session.type === 'show' ? await fetchShowSeasonCount(session.name) : session.seasonCount;
+      } else if (value === 'no' && session.originalName) {
+        session.name = session.originalName;
+        session.seasonCount = session.type === 'show' ? await fetchShowSeasonCount(session.name) : session.seasonCount;
       }
 
       session.corrected = null;
@@ -494,6 +499,7 @@ module.exports = {
     }
 
     const correction = await autocorrectTitle(rawName);
+    session.originalName = correction.original;
     session.name = correction.corrected;
     session.corrected = correction.corrected !== correction.original ? correction.corrected : null;
 

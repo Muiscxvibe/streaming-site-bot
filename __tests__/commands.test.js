@@ -235,6 +235,47 @@ describe('go-to command', () => {
     expect(addTorrent).toHaveBeenCalledTimes(2);
     expect(startDownloadProgress).toHaveBeenCalledTimes(2);
   });
+
+  it('re-fetches season count when a correction is rejected', async () => {
+    getWebsite.mockReturnValue('https://example.com/');
+    isConfigured.mockReturnValue(true);
+    autocorrectTitle.mockResolvedValue({ original: 'Sauth Park', corrected: 'South Park', suggestion: 'South Park' });
+    fetchShowSeasonCount
+      .mockResolvedValueOnce(20) // initial spellcheck using corrected title
+      .mockResolvedValueOnce(5); // after rejecting correction
+
+    const reply = jest.fn();
+    const update = jest.fn();
+
+    await goToCommand.execute({ user: { id: 'user1' }, reply });
+    const sessionId = [...goToCommand.__sessionStore.keys()].at(-1);
+
+    await goToCommand.handleModal({
+      customId: `goto-modal:show:${sessionId}`,
+      fields: {
+        getTextInputValue: (name) => {
+          if (name === 'name') return 'Sauth Park';
+          if (name === 'season') return '1';
+          if (name === 'episode') return '';
+          return '';
+        },
+      },
+      user: { id: 'user1' },
+      reply,
+      editReply: jest.fn(),
+    });
+
+    await goToCommand.handleButton({
+      customId: `goto:confirm:${sessionId}:no`,
+      update,
+      user: { id: 'user1' },
+      reply,
+      editReply: jest.fn(),
+    });
+
+    expect(fetchShowSeasonCount).toHaveBeenCalledTimes(2);
+    expect(fetchShowSeasonCount).toHaveBeenLastCalledWith('Sauth Park');
+  });
 });
 
 describe('website command', () => {
